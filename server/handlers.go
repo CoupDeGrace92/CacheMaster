@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -188,4 +190,221 @@ func (cfg *apiConfig) HandleDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	w.Write([]byte("Successfully deleted user's data"))
+}
+
+func (cfg *apiConfig) HandleDeleteUsers(w http.ResponseWriter, r *http.Request) {
+	if os.Getenv("PLATFORM") != "dev" {
+		w.WriteHeader(http.StatusUnauthorized)
+		log.Println("Environment is not a dev environment - don't do this to prod you dunce")
+		return
+	}
+
+	err := cfg.db.DeleteUsers(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Error resetting db:", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("users db reset"))
+}
+
+func (cfg *apiConfig) HandleDeleteDataDB(w http.ResponseWriter, r *http.Request) {
+	if os.Getenv("PLATFORM") != "dev" {
+		w.WriteHeader(http.StatusUnauthorized)
+		log.Println("Environment is not a dev environment - don't do this to prod you dunce")
+		return
+	}
+
+	err := cfg.db.DeleteDataTable(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Error resetting db:", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("data db reset"))
+}
+
+func (cfg *apiConfig) HandleGetData(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		log.Println("Error getting bearer token:", err)
+		w.Write([]byte("Malformed or missing bearer token"))
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.Secret)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		log.Println("Error authourizing user", err)
+		return
+	}
+
+	type Params struct {
+		Dataid uuid.UUID `json:"dataid"`
+	}
+
+	var params Params
+
+	err = json.NewDecoder(r.Body).Decode(&params)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		log.Println("Error decoding request", err)
+		w.Write([]byte("Need to include data id to fetch"))
+		return
+	}
+
+	dat, err := cfg.db.GetData(r.Context(), params.Dataid)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Error getting requested data", err)
+		return
+	}
+
+	user, err := cfg.db.GetUser(r.Context(), dat.Username)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Error: failed to get user associated with data:", err)
+		return
+	}
+
+	if user.ID != userID {
+		w.WriteHeader(http.StatusUnauthorized)
+		log.Println("Unauthorized user tried to access data")
+		return
+	}
+
+	type Resp struct {
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Dat       string    `json:"dat"`
+	}
+
+	resp := Resp{
+		CreatedAt: dat.CreatedAt,
+		UpdatedAt: dat.UpdatedAt,
+		Dat:       dat.Dat,
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "json/application")
+	err = json.NewEncoder(w).Encode(resp)
+	if err != nil {
+		log.Println("Error encoding json response:", err)
+	}
+}
+
+func (cfg *apiConfig) HandleGetDataByUser(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		log.Println("Error getting bearer token", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.Secret)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	type Params struct {
+		Username string `json:"username"`
+	}
+
+	var params Params
+
+	err = json.NewDecoder(r.Body).Decode(&params)
+	if err != nil {
+		log.Println("Error decoding params", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	user, err := cfg.db.GetUser(r.Context(), params.Username)
+	if err != nil {
+		log.Println("Error fetching user from db to get data entries", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if user.ID != userID {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	ids, err := cfg.db.GetDataByUser(r.Context(), params.Username)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		log.Println("Error fetching ids of data associated with user", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(ids)
+	if err != nil {
+		log.Println("Error encoding data list to json:", err)
+	}
+}
+
+func (cfg *apiConfig) HandleUpdateData(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		log.Println("Error getting bearer token:", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.Secret)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		log.Println("Error validating jwt", err)
+		return
+	}
+
+	type Params struct {
+		Username string `json:"username"`
+		Dat      string `json:"dat"`
+	}
+
+	var params Params
+
+	err = json.NewDecoder(r.Body).Decode(&params)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		log.Println("Error decoding json into struct:", err)
+		return
+	}
+
+	user, err := cfg.db.GetUser(r.Context(), params.Username)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Failed to fetch user from db:", err)
+		return
+	}
+
+	if user.ID != userID {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	args := database.InsertDataParams{
+		Dat:      params.Dat,
+		Username: params.Username,
+	}
+
+	id, err := cfg.db.InsertData(r.Context(), args)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Failed to write to db:", err)
+		w.Write([]byte("Failed to write to db"))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "DATA ID: %s", id)
 }

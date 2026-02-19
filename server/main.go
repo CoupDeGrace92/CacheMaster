@@ -44,11 +44,11 @@ func main() {
 	ServerMux.Handle("POST /api/register", http.HandlerFunc(apiCfg.HandleNewUser))
 	ServerMux.Handle("POST /api/login", http.HandlerFunc(apiCfg.HandleLogin))
 	ServerMux.Handle("DELETE /api/delete_user", http.HandlerFunc(apiCfg.HandleDeleteUser))
-	/*
-		//Admin endpoints
-		ServerMux.Handle("DELETE /admin/reset/users", http.HandlerFunc(apiCfg.HandleDeleteUsers))
-		ServerMux.Handle("DELETE /admin/reset/data", http.HandlerFunc(apiCfg.HandleDeleteDataDB))
 
+	//Admin endpoints
+	ServerMux.Handle("DELETE /admin/reset/users", http.HandlerFunc(apiCfg.HandleDeleteUsers))
+	ServerMux.Handle("DELETE /admin/reset/data", http.HandlerFunc(apiCfg.HandleDeleteDataDB))
+	/*
 		//Data retrieval endpoints
 		ServerMux.Handle("GET /api/data/{id}", http.HandlerFunc(apiCfg.HandleGetData))
 		ServerMux.Handle("POST /api/data/{id}", http.HandlerFunc(apiCfg.HandleUpdateData)) //No idempotency in data
