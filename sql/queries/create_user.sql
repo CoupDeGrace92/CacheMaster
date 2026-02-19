@@ -7,4 +7,4 @@ VALUES (
     $1,
     $2
 )
-RETURNING id, created_at, updated_at, user_name;
+RETURNING id, created_at, updated_at, username;

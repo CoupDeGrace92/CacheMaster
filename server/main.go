@@ -9,7 +9,7 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 
-	"github.com/CoupDeGrace92/CacheMaster/database"
+	"github.com/CoupDeGrace92/CacheMaster/server/database"
 )
 
 type apiConfig struct {
@@ -34,17 +34,17 @@ func main() {
 	dbConfig := database.New(db)
 
 	apiCfg := apiConfig{
-		db:     nil,
+		db:     dbConfig,
 		Secret: os.Getenv("JWT_SECRET"),
 	}
 
 	ServerMux := http.NewServeMux()
-	/*
-		//User management endpoints
-		ServerMux.Handle("POST /api/register", http.HandlerFunc(apiCfg.HandleNewUser))
-		ServerMux.Handle("POST /api/login", http.HandlerFunc(apiCfg.HandleLogin))
-		ServerMux.Handle("DELETE /api/delete_user", http.HandlerFunc(apiCfg.HandleDeleteUser))
 
+	//User management endpoints
+	ServerMux.Handle("POST /api/register", http.HandlerFunc(apiCfg.HandleNewUser))
+	ServerMux.Handle("POST /api/login", http.HandlerFunc(apiCfg.HandleLogin))
+	ServerMux.Handle("DELETE /api/delete_user", http.HandlerFunc(apiCfg.HandleDeleteUser))
+	/*
 		//Admin endpoints
 		ServerMux.Handle("DELETE /admin/reset/users", http.HandlerFunc(apiCfg.HandleDeleteUsers))
 		ServerMux.Handle("DELETE /admin/reset/data", http.HandlerFunc(apiCfg.HandleDeleteDataDB))
