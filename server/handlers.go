@@ -290,8 +290,8 @@ func (cfg *apiConfig) HandleGetData(w http.ResponseWriter, r *http.Request) {
 		Dat:       dat.Dat,
 	}
 
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "json/application")
+	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(resp)
 	if err != nil {
 		log.Println("Error encoding json response:", err)
@@ -343,8 +343,8 @@ func (cfg *apiConfig) HandleGetDataByUser(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(ids)
 	if err != nil {
 		log.Println("Error encoding data list to json:", err)
@@ -403,8 +403,113 @@ func (cfg *apiConfig) HandleUpdateData(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Failed to write to db"))
 		return
 	}
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "DATA ID: %s", id)
+}
+
+func (cfg *apiConfig) HandleNewData(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		log.Println("Failed to fetch bearer token:", err)
+		w.Write([]byte("Failed to fetch bearer token"))
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.Secret)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	type Params struct {
+		Username string `json:"username"`
+		Dat      string `json:"dat"`
+	}
+
+	var params Params
+
+	err = json.NewDecoder(r.Body).Decode(&params)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Failed to decode response body into json:", err)
+		return
+	}
+	user, err := cfg.db.GetUser(r.Context(), params.Username)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Failed to fetch user information from db:", err)
+		return
+	}
+
+	if user.ID != userID {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	payload := database.InsertDataParams{
+		Dat:      params.Dat,
+		Username: user.Username,
+	}
+
+	_, err = cfg.db.InsertData(r.Context(), payload)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Error inserting data into db:", err)
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "DATA ID: %s", id)
+	w.Write([]byte("Data added to db"))
+}
+
+func (cfg *apiConfig) HandleDeleteData(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.Secret)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	type Params struct {
+		Username string    `json:"username"`
+		DatID    uuid.UUID `json:"datid"`
+	}
+
+	var params Params
+
+	err = json.NewDecoder(r.Body).Decode(&params)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Error decoding request:", err)
+		return
+	}
+
+	user, err := cfg.db.GetUser(r.Context(), params.Username)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		log.Println("Error getting user info:", err)
+		return
+	}
+
+	if user.ID != userID {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	err = cfg.db.DeleteDataByID(r.Context(), params.DatID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Error could not delete data:", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Deleted requested data"))
 }

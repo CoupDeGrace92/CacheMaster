@@ -48,14 +48,14 @@ func main() {
 	//Admin endpoints
 	ServerMux.Handle("DELETE /admin/reset/users", http.HandlerFunc(apiCfg.HandleDeleteUsers))
 	ServerMux.Handle("DELETE /admin/reset/data", http.HandlerFunc(apiCfg.HandleDeleteDataDB))
-	/*
-		//Data retrieval endpoints
-		ServerMux.Handle("GET /api/data/{id}", http.HandlerFunc(apiCfg.HandleGetData))
-		ServerMux.Handle("POST /api/data/{id}", http.HandlerFunc(apiCfg.HandleUpdateData)) //No idempotency in data
-		ServerMux.Handle("POST /api/data/new", http.HandlerFunc(apiCfg.HandeNewData))
-		ServerMux.Handle("DELETE /api/data/{id}", http.HandlerFunc(apiCfg.HandleDeleteData))
-		ServerMux.Handle("GET /api/user_data/{username}", http.HandlerFunc(apiCfg.HandleGetDataByUser))
-	*/
+
+	//Data retrieval endpoints
+	ServerMux.Handle("GET /api/data/{id}", http.HandlerFunc(apiCfg.HandleGetData))
+	ServerMux.Handle("POST /api/data/{id}", http.HandlerFunc(apiCfg.HandleUpdateData)) //No idempotency in data
+	ServerMux.Handle("POST /api/data/new", http.HandlerFunc(apiCfg.HandleNewData))
+	ServerMux.Handle("DELETE /api/data/{id}", http.HandlerFunc(apiCfg.HandleDeleteData))
+	ServerMux.Handle("GET /api/user_data/{username}", http.HandlerFunc(apiCfg.HandleGetDataByUser))
+
 	server := &http.Server{
 		Handler: ServerMux,
 		Addr:    ":8080",
