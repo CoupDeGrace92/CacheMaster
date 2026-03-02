@@ -72,6 +72,7 @@ func (c *Cache) Set(key string, d *Data) {
 		if d.SizeOf() > c.maxSize-c.currentSize {
 			return
 		}
+		c.currentSize += d.SizeOf()
 	}
 	if d.Perm == true {
 		c.perm[key] = d
