@@ -76,6 +76,12 @@ func (p *LRUPolicy) Delete(key string, entry *Data) {
 	delete(p.nodeMap, key)
 }
 
+func (p *LRUPolicy) SelectVictim() (key string) {
+	key = p.tail.key
+	delete(p.nodeMap, key)
+	return
+}
+
 func (p *LRUPolicy) moveToHead(c *LLnode) {
 	if p.head == c {
 		return
