@@ -46,7 +46,9 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 			return nil, exists
 		}
 	}
-	c.policy.OnAccess(key, d)
+	if c.policy != nil {
+		c.policy.OnAccess(key, d)
+	}
 	return d.Data, exists
 }
 
