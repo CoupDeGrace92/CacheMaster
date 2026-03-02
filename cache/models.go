@@ -78,7 +78,9 @@ func (c *Cache) Set(key string, d *Data) {
 	} else {
 		c.data[key] = d
 	}
-	c.policy.OnInsert(key, d)
+	if c.policy != nil {
+		c.policy.OnInsert(key, d)
+	}
 }
 
 func (c *Cache) MakePerm(key string) {
@@ -116,7 +118,9 @@ func (c *Cache) Delete(key string) {
 	c.currentSize -= d.SizeOf()
 	delete(c.data, key)
 	delete(c.perm, key)
-	c.policy.OnDelete(key, d)
+	if c.policy != nil {
+		c.policy.OnDelete(key, d)
+	}
 }
 
 func (d *Data) SizeOf() int {

@@ -3,7 +3,7 @@ package cache
 import (
 	"testing"
 
-	"github.com/strtchr/testify/require"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSimpleStorage(t *testing.T) {
