@@ -53,13 +53,18 @@ func NewLRUPolicy() *LRUPolicy {
 }
 
 func (p *LRUPolicy) OnInsert(key string, entry *Data) {
-	node := &LLnode{
-		key: key,
+	node, ok := p.nodeMap[key]
+	if !ok {
+		node = &LLnode{
+			key: key,
+		}
+		p.nodeMap[key] = node
 	}
 	entry.Count++
-	entry.CreatedAt = time.Now()
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now()
+	}
 	entry.LastAccess = time.Now()
-	p.nodeMap[key] = node
 	p.moveToHead(node)
 }
 
@@ -70,15 +75,20 @@ func (p *LRUPolicy) OnAccess(key string, entry *Data) {
 	p.moveToHead(node)
 }
 
-func (p *LRUPolicy) Delete(key string, entry *Data) {
-	node := p.nodeMap[key]
+func (p *LRUPolicy) OnDelete(key string, entry *Data) {
+	node, ok := p.nodeMap[key]
+	if !ok {
+		return
+	}
 	p.removeNode(node)
 	delete(p.nodeMap, key)
 }
 
 func (p *LRUPolicy) SelectVictim() (key string) {
+	if p.tail == nil {
+		return ""
+	}
 	key = p.tail.key
-	delete(p.nodeMap, key)
 	return
 }
 

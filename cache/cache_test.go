@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,9 @@ func TestSimpleStorage(t *testing.T) {
 	s.Delete(key)
 	v, exists = s.Get(key)
 	require.False(t, exists, "Key should be deleted from the storage")
+
+	v, exists = s.Get("This is a fake key")
+	require.False(t, exists, "This key does not exist so should be false")
 }
 
 func TestPermNonPerm(t *testing.T) {
@@ -96,6 +100,132 @@ func TestDeleteBasic(t *testing.T) {
 	s.Delete("Not a real key")
 }
 
-//TEST LRU POLICY - FORCE EVICTIONS
+// TEST LRU POLICY - FORCE EVICTIONS
+func TestLRUBasic(t *testing.T) {
+	s := NewCache()
+	s.policy = NewLRUPolicy()
+
+	key1 := "1"
+	value1 := &Data{
+		Perm: false,
+		Data: []byte("This is non-perm"),
+	}
+	key2 := "2"
+	value2 := &Data{
+		Perm: true,
+		Data: []byte("This is perm"),
+	}
+	key3 := "3"
+	value3 := &Data{
+		Perm: false,
+		Data: []byte("non-perm again"),
+	}
+	s.Set(key1, value1)
+	s.Set(key2, value2)
+	s.Set(key3, value3)
+
+	v1, exists1 := s.Get(key1)
+	require.True(t, exists1, "Key should exist in data")
+	require.Equal(t, value1.Data, v1, "Retrieved value should be equal")
+
+	v2, exists2 := s.Get(key2)
+	require.True(t, exists2, "Key should exist in data")
+	require.Equal(t, value2.Data, v2, "Retrieved value should be equal")
+
+	v3, exists3 := s.Get(key3)
+	require.True(t, exists3, "Key should exist in data")
+	require.Equal(t, value3.Data, v3, "Retrieved value should be equal")
+
+	//key 1 should be the last in line - lets force evict:
+	k := s.policy.SelectVictim()
+	s.Delete(k)
+	_, exists1 = s.Get(key1)
+	require.False(t, exists1, "This key should have been reaped")
+	_, exists2 = s.Get(key2)
+	require.True(t, exists2, "This key should never be reaped unless manually")
+	_, exists3 = s.Get(key3)
+	require.True(t, exists3, "Key should still be in the data")
+
+	//Now 3 was most recently accessed but 2 is permmed, so if we reap again only 2 should be left
+	k = s.policy.SelectVictim()
+	s.Delete(k)
+	fmt.Println(k)
+	_, exists2 = s.Get(key2)
+	require.True(t, exists2, "Permed data should not be reaped")
+	_, exists3 = s.Get(key3)
+	require.False(t, exists3, "Only other option to reap, so this should be reaped")
+}
+
+func TestLRUUpdate(t *testing.T) {
+	s := NewCache()
+	s.policy = NewLRUPolicy()
+
+	key1 := "1"
+	key2 := "2"
+	value1 := &Data{
+		Perm: false,
+		Data: []byte("Hello World"),
+	}
+	value2 := &Data{
+		Perm: false,
+		Data: []byte("I'm here for a good time, not a long time"),
+	}
+	value3 := &Data{
+		Perm: false,
+		Data: []byte("A whole new world"),
+	}
+
+	s.Set(key1, value1)
+	s.Set(key2, value2)
+	v1, exists1 := s.Get(key1)
+	require.True(t, exists1, "Value must be in cache")
+	require.Equal(t, value1.Data, v1, "value must be what we put there")
+	v2, exists2 := s.Get(key2)
+	require.True(t, exists2, "Value 2 must be in data")
+	require.Equal(t, value2.Data, v2, "value must be what we put there")
+
+	s.Set(key1, value3)
+	//Reap here after set before a get
+	k := s.policy.SelectVictim()
+	s.Delete(k)
+
+	v1, exists1 = s.Get(key1)
+	_, exists2 = s.Get(key2)
+	require.True(t, exists1, "Key one should not be reaped")
+	require.False(t, exists2, "Key two should be reaped")
+	require.Equal(t, v1, value3.Data, "Key one should contain updated data")
+}
+
+func TestLRUPerm(t *testing.T) {
+	s := NewCache()
+	s.policy = NewLRUPolicy()
+
+	//Calling get and delete on keys that don't exist, also selecting victim from an empty policy
+	s.Get("1")
+	s.Delete("1")
+	key := s.policy.SelectVictim()
+	require.Equal(t, key, "", "Victim should be the empty string")
+
+	key1 := "1"
+	value1 := &Data{
+		Data: []byte("Hi mom, I am coding"),
+	}
+	key2 := "2"
+	value2 := &Data{
+		Data: []byte("Are you proud of me dad?"),
+	}
+
+	s.Set(key1, value1)
+	s.Set(key2, value2)
+
+	s.MakePerm(key1)
+	k := s.policy.SelectVictim()
+	s.Delete(k)
+	v1, exists1 := s.Get(key1)
+	_, exists2 := s.Get(key2)
+	require.True(t, exists1, "This key was permmed so should not have been removed")
+	require.Equal(t, v1, value1.Data, "Data is what we inserted")
+	require.False(t, exists2, "While this was moved to the head, this is the only non-permmed data")
+}
 
 //TEST LRU POLICY - IMPLEMENT SIZE LIMITS

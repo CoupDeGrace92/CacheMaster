@@ -46,7 +46,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 			return nil, exists
 		}
 	}
-	if c.policy != nil {
+	if c.policy != nil && d.Perm == false {
 		c.policy.OnAccess(key, d)
 	}
 	return d.Data, exists
@@ -79,7 +79,7 @@ func (c *Cache) Set(key string, d *Data) {
 	} else {
 		c.data[key] = d
 	}
-	if c.policy != nil {
+	if c.policy != nil && d.Perm == false {
 		c.policy.OnInsert(key, d)
 	}
 }
@@ -93,6 +93,9 @@ func (c *Cache) MakePerm(key string) {
 	}
 	c.perm[key] = d
 	delete(c.data, key)
+	if c.policy != nil {
+		c.policy.OnDelete(key, d)
+	}
 }
 
 func (c *Cache) MakeNonPerm(key string) {
@@ -104,6 +107,9 @@ func (c *Cache) MakeNonPerm(key string) {
 	}
 	c.data[key] = d
 	delete(c.perm, key)
+	if c.policy != nil {
+		c.policy.OnInsert(key, d)
+	}
 }
 
 func (c *Cache) Delete(key string) {
@@ -119,7 +125,7 @@ func (c *Cache) Delete(key string) {
 	c.currentSize -= d.SizeOf()
 	delete(c.data, key)
 	delete(c.perm, key)
-	if c.policy != nil {
+	if c.policy != nil && !d.Perm {
 		c.policy.OnDelete(key, d)
 	}
 }
