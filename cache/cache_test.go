@@ -283,4 +283,12 @@ func TestLRUWithSize(t *testing.T) {
 	s.Set(key4, value2)
 	_, exists4 := s.Get(key4)
 	require.False(t, exists4, "This item is too big to fit into the cache")
+
+	//Make key 3 perm
+	s.MakePerm(key3)
+	s.Get(key2)
+	s.Set(key1, value1) //this should cause an eviction of key2 even though it was more recently grabbed
+	_, exists2 = s.Get(key2)
+	require.False(t, exists2, "Should be evicted because the other option is permmed")
+
 }

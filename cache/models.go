@@ -53,9 +53,46 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	return d.Data, exists
 }
 
-func (c *Cache) Set(key string, d *Data) {
+func (c *Cache) SetSize(i int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.maxSize = i
+	if c.maxSize < 0 {
+		c.maxSize = 0
+	}
+}
+
+func (c *Cache) AddSize(i int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.maxSize += i
+	if c.maxSize < 0 {
+		c.maxSize = 0
+	}
+}
+
+func (c *Cache) GetMaxSize() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.maxSize
+}
+
+func (c *Cache) GetCurrentSize() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.currentSize
+}
+
+func (c *Cache) GetCurrentPermSize() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.currentPermSize
+}
+
+func (c *Cache) Set(key string, d *Data) (added bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	added = true
 	//If key already exists and we are just updating, our sizing function has to account for that
 	current := 0
 	if dat, ok := c.data[key]; ok {
@@ -67,11 +104,11 @@ func (c *Cache) Set(key string, d *Data) {
 	if c.policy != nil {
 		add := c.Sizing(d, current)
 		if !add {
-			return
+			return false
 		}
 	} else {
 		if d.SizeOf() > c.maxSize-c.currentSize {
-			return
+			return false
 		}
 		c.currentSize += d.SizeOf() - current
 		if d.Perm {
@@ -86,6 +123,7 @@ func (c *Cache) Set(key string, d *Data) {
 	if c.policy != nil && d.Perm == false {
 		c.policy.OnInsert(key, d)
 	}
+	return
 }
 
 func (c *Cache) MakePerm(key string) {
@@ -156,8 +194,11 @@ func (c *Cache) Sizing(d *Data, currentDataSize int) (add bool) {
 	}
 	for size+c.currentSize >= c.maxSize {
 		key := c.policy.SelectVictim()
-		c.currentSize -= c.data[key].SizeOf()
-		delete(c.data, key)
+		if data, ok := c.data[key]; ok {
+			c.currentSize -= data.SizeOf()
+			c.policy.OnDelete(key, data)
+			delete(c.data, key)
+		}
 	}
 	c.currentSize += size
 	if d.Perm {
