@@ -228,4 +228,59 @@ func TestLRUPerm(t *testing.T) {
 	require.False(t, exists2, "While this was moved to the head, this is the only non-permmed data")
 }
 
-//TEST LRU POLICY - IMPLEMENT SIZE LIMITS
+// TEST LRU POLICY - IMPLEMENT SIZE LIMITS
+func TestLRUWithSize(t *testing.T) {
+	size := 200
+
+	//size of the cache item should be 88 + len(slice)
+	//the flat overhead is for a bool, the padding, two time.Time structs, the int count, and 24 byte header for the Data slice
+	//given this, we should be able to hold 2 10 byte objects, but should not be able to hold the 1000 byte data
+
+	s := NewCache()
+	s.policy = NewLRUPolicy()
+	s.maxSize = size
+
+	//Generate 10 byte data of a's
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	BIGBYTE := []byte{}
+	for i := 1; i <= 1000; i++ {
+		BIGBYTE = append(BIGBYTE, 'a')
+	}
+
+	key1 := "1"
+	value1 := &Data{
+		Data: tenByte,
+	}
+	value2 := &Data{
+		Data: BIGBYTE,
+	}
+	key2 := "2"
+	key3 := "3"
+	key4 := "4"
+
+	s.Set(key1, value1)
+	s.Set(key2, value1)
+
+	v1, exists1 := s.Get(key1)
+	require.True(t, exists1, "Item 1 should not have been evicted when we set the value")
+	require.Equal(t, v1, tenByte, "This should be the generic tenByte object")
+	v2, exists2 := s.Get(key2)
+	require.True(t, exists2, "the value 2 should have been set")
+	require.Equal(t, v2, tenByte, "Should be tenByte")
+
+	//now try some eviction:
+	s.Set(key3, value1)
+	_, exists3 := s.Get(key3)
+	_, exists1 = s.Get(key1)
+	require.True(t, exists3, "exists3 should be in the cache")
+	require.False(t, exists1, "This should have been the last eviction")
+
+	//Attempt to add an object that is too large to the cache
+	s.Set(key4, value2)
+	_, exists4 := s.Get(key4)
+	require.False(t, exists4, "This item is too big to fit into the cache")
+}

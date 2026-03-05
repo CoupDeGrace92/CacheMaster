@@ -16,12 +16,13 @@ type Data struct {
 }
 
 type Cache struct {
-	mu          sync.Mutex
-	data        map[string]*Data
-	perm        map[string]*Data
-	policy      EvictionPolicy
-	maxSize     int
-	currentSize int
+	mu              sync.Mutex
+	data            map[string]*Data
+	perm            map[string]*Data
+	policy          EvictionPolicy
+	maxSize         int
+	currentSize     int
+	currentPermSize int
 }
 
 func NewCache() *Cache {
@@ -72,7 +73,10 @@ func (c *Cache) Set(key string, d *Data) {
 		if d.SizeOf() > c.maxSize-c.currentSize {
 			return
 		}
-		c.currentSize += d.SizeOf()
+		c.currentSize += d.SizeOf() - current
+		if d.Perm {
+			c.currentPermSize += d.SizeOf() - current
+		}
 	}
 	if d.Perm == true {
 		c.perm[key] = d
@@ -96,6 +100,7 @@ func (c *Cache) MakePerm(key string) {
 	if c.policy != nil {
 		c.policy.OnDelete(key, d)
 	}
+	c.currentPermSize += d.SizeOf()
 }
 
 func (c *Cache) MakeNonPerm(key string) {
@@ -110,6 +115,7 @@ func (c *Cache) MakeNonPerm(key string) {
 	if c.policy != nil {
 		c.policy.OnInsert(key, d)
 	}
+	c.currentPermSize -= d.SizeOf()
 }
 
 func (c *Cache) Delete(key string) {
@@ -144,7 +150,7 @@ func (c *Cache) Sizing(d *Data, currentDataSize int) (add bool) {
 		c.currentSize += size
 		return
 	}
-	if size >= c.maxSize {
+	if size >= c.maxSize-c.currentPermSize {
 		add = false
 		return
 	}
@@ -154,5 +160,8 @@ func (c *Cache) Sizing(d *Data, currentDataSize int) (add bool) {
 		delete(c.data, key)
 	}
 	c.currentSize += size
+	if d.Perm {
+		c.currentPermSize += size
+	}
 	return
 }
