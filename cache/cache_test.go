@@ -290,5 +290,79 @@ func TestLRUWithSize(t *testing.T) {
 	s.Set(key1, value1) //this should cause an eviction of key2 even though it was more recently grabbed
 	_, exists2 = s.Get(key2)
 	require.False(t, exists2, "Should be evicted because the other option is permmed")
+}
 
+func TestLFUWithSize(t *testing.T) {
+	s := NewCache()
+	s.policy = NewLFUPolicy()
+
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	BIGBYTE := []byte{}
+	for i := 1; i <= 1000; i++ {
+		BIGBYTE = append(BIGBYTE, 'a')
+	}
+
+	size := 200
+	s.SetSize(size)
+
+	key1 := "1"
+	key2 := "2"
+	key3 := "3"
+	key4 := "4"
+	key5 := "5"
+	key6 := "6"
+
+	value1 := &Data{
+		Data: tenByte,
+	}
+	value2 := &Data{
+		Data: tenByte,
+	}
+	value3 := &Data{
+		Data: tenByte,
+	}
+	value4 := &Data{
+		Data: tenByte,
+	}
+	value5 := &Data{
+		Data: tenByte,
+	}
+	value6 := &Data{
+		Data: BIGBYTE,
+	}
+
+	s.Set(key1, value1)
+	v1, exists1 := s.Get(key1)
+	require.True(t, exists1, "Value should be in cache")
+	require.Equal(t, v1, value1.Data, "Data should be equal to inserted data")
+
+	s.Set(key2, value2)
+	s.Set(key3, value3)
+	_, exists2 := s.Get(key2)
+	v3, exists3 := s.Get(key3)
+	require.False(t, exists2, "key2 should have been reaped from bucket 1")
+	require.True(t, exists3, "Key 3 should now be present in bucket 2")
+	require.Equal(t, v3, value3.Data, "Key 3's data should be correct")
+	require.Equal(t, value3.Count, 2, "Should be in bucket2 - one for creation one for get")
+
+	s.AddSize(100)
+	s.Set(key4, value4)
+	s.Get(key4)
+	v4, exists4 := s.Get(key4)
+	require.True(t, exists4, "Key 4 should exist and be present in bucket 3")
+	require.Equal(t, v4, value4.Data)
+	require.Equal(t, value4.Count, 3, "key 4 should be in bucket 3")
+
+	//Now if we eject a value, it should be key1 from bucket 2
+	s.Set(key5, value5)
+	_, exists1 = s.Get(key1)
+	require.False(t, exists1, "This value should have been ejected from bucket 2")
+
+	s.Set(key6, value6)
+	_, exists6 := s.Get(key6)
+	require.False(t, exists6, "This value is to big to include in the cache")
 }

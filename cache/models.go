@@ -21,8 +21,36 @@ type Cache struct {
 	perm            map[string]*Data
 	policy          EvictionPolicy
 	maxSize         int
+	maxAge          time.Duration
 	currentSize     int
 	currentPermSize int
+	Reapers         []ManagedReaper
+}
+
+type ManagedReaper struct {
+	Loop   TimeReap
+	StopCh chan struct{}
+}
+
+func (m ManagedReaper) Close() {
+	close(m.StopCh)
+}
+
+func (m ManagedReaper) Start(interval time.Duration, c *Cache) {
+	s := m.Loop.Reap(interval, c.maxAge, c)
+	m.StopCh = s
+}
+
+func (m ManagedReaper) onInsert(key string, entry *Data) {
+	m.Loop.onInsert(key, entry)
+}
+
+func (m ManagedReaper) onAccess(key string, entry *Data) {
+	m.Loop.onAccess(key, entry)
+}
+
+func (m ManagedReaper) onDelete(key string, entry *Data) {
+	m.Loop.onDelete(key, entry)
 }
 
 func NewCache() *Cache {
@@ -50,6 +78,9 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	if c.policy != nil && d.Perm == false {
 		c.policy.OnAccess(key, d)
 	}
+	for _, reaper := range c.Reapers {
+		reaper.onAccess(key, d)
+	}
 	return d.Data, exists
 }
 
@@ -59,6 +90,15 @@ func (c *Cache) SetSize(i int) {
 	c.maxSize = i
 	if c.maxSize < 0 {
 		c.maxSize = 0
+	}
+}
+
+func (c *Cache) SetMaxAge(i int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.maxAge = time.Duration(i) * time.Second
+	if c.maxAge < 0 {
+		c.maxAge = 0
 	}
 }
 
@@ -123,6 +163,9 @@ func (c *Cache) Set(key string, d *Data) (added bool) {
 	if c.policy != nil && d.Perm == false {
 		c.policy.OnInsert(key, d)
 	}
+	for _, reaper := range c.Reapers {
+		reaper.onInsert(key, d)
+	}
 	return
 }
 
@@ -138,6 +181,9 @@ func (c *Cache) MakePerm(key string) {
 	if c.policy != nil {
 		c.policy.OnDelete(key, d)
 	}
+	for _, reaper := range c.Reapers {
+		reaper.onDelete(key, d)
+	}
 	c.currentPermSize += d.SizeOf()
 }
 
@@ -152,6 +198,9 @@ func (c *Cache) MakeNonPerm(key string) {
 	delete(c.perm, key)
 	if c.policy != nil {
 		c.policy.OnInsert(key, d)
+	}
+	for _, reaper := range c.Reapers {
+		reaper.onDelete(key, d)
 	}
 	c.currentPermSize -= d.SizeOf()
 }
@@ -171,6 +220,29 @@ func (c *Cache) Delete(key string) {
 	delete(c.perm, key)
 	if c.policy != nil && !d.Perm {
 		c.policy.OnDelete(key, d)
+	}
+	for _, reaper := range c.Reapers {
+		reaper.onDelete(key, d)
+	}
+}
+
+// We need a function when the mutex is locked externally
+func (c *Cache) DeleteNoLock(key string) {
+	d, ok := c.data[key]
+	if !ok {
+		d, ok = c.perm[key]
+		if !ok {
+			return
+		}
+	}
+	c.currentSize -= d.SizeOf()
+	delete(c.data, key)
+	delete(c.perm, key)
+	if c.policy != nil && !d.Perm {
+		c.policy.OnDelete(key, d)
+	}
+	for _, reaper := range c.Reapers {
+		reaper.onDelete(key, d)
 	}
 }
 

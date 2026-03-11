@@ -7,7 +7,22 @@ import (
 
 // Time based cache eviction
 // Create linked list, reap tail until we find object not ready for reaping, then wait ticker
-func (c *Cache) LastAccessReap(interval time.Duration) {
+func (c *Cache) LastAccessReap(interval time.Duration, l *LAReapList) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for t := range ticker.C {
+		l.Reap(t, interval)
+	}
+}
+
+func (l *LAReapList) Reap(t time.Time, interval time.Duration) {
+
+}
+
+type LAReapList struct {
+	head *LLnode
+	tail *LLnode
 }
 
 // we can be more efficient here if we organize it into a linked list - inserted at creation
@@ -23,6 +38,13 @@ func (c *Cache) TimeSinceCreationReap(interval time.Duration) {
 			}
 		}
 	}
+}
+
+type TimeReap interface {
+	onInsert(key string, entry *Data)
+	onAccess(key string, entry *Data)
+	onDelete(key string, entry *Data)
+	Reap(interval, maxAge time.Duration, cache *Cache) chan struct{}
 }
 
 type EvictionPolicy interface {
@@ -149,6 +171,14 @@ type Bucket struct {
 	next *Bucket
 	prev *Bucket
 	id   int
+}
+
+func NewLFUPolicy() *LFUPolicy {
+	return &LFUPolicy{
+		minFreq: 0,
+		buckets: make(map[int]*Bucket),
+		nodeMap: make(map[string]*LLnode),
+	}
 }
 
 func (p *LFUPolicy) addToBucket(node *LLnode, prevBucket *Bucket, entry *Data) {
@@ -301,8 +331,12 @@ func (p *LFUPolicy) promoteRemove(entry *Data, node *LLnode) (previous *Bucket) 
 // Right now this function only works for items without history we create a data item with no
 // history in the cache and insert it in the first bucket
 func (p *LFUPolicy) OnInsert(key string, entry *Data) {
-	entry.CreatedAt = time.Now()
 	entry.LastAccess = time.Now()
+	if entry.Count > 1 {
+		p.OnInsertGeneric(key, entry)
+		return
+	}
+	entry.CreatedAt = time.Now()
 	entry.Count = 1
 	node := &LLnode{
 		key: key,
@@ -351,14 +385,17 @@ func (p *LFUPolicy) OnInsertGeneric(key string, entry *Data) {
 
 func (p *LFUPolicy) OnAccess(key string, entry *Data) {
 	node := p.nodeMap[key]
-	entry.Count++
 	entry.LastAccess = time.Now()
 	prev := p.promoteRemove(entry, node)
+	entry.Count++
 	p.addToBucket(node, prev, entry)
 }
 
 func (p *LFUPolicy) OnDelete(key string, entry *Data) {
-	node := p.nodeMap[key]
+	node, ok := p.nodeMap[key]
+	if !ok {
+		return
+	}
 	p.removeFromBucket(entry, node)
 	delete(p.nodeMap, key)
 }
@@ -367,6 +404,203 @@ func (p *LFUPolicy) SelectVictim() (key string) {
 	key = p.removeFromBucketTail()
 	delete(p.nodeMap, key)
 	return
+}
+
+// TIME BASED REAP POLICIES
+// Last Access reap
+type LAReap struct {
+	head *LLnode
+	tail *LLnode
+	m    map[string]*LLnode
+}
+
+func (l *LAReap) OnAccess(key string, entry *Data) {
+	entry.LastAccess = time.Now()
+	node := l.m[key]
+	if l.head == node {
+		return
+	}
+	if node.prev != nil {
+		node.prev.next = node.next
+	}
+	if node.next != nil {
+		node.next.prev = node.prev
+	} else {
+		l.tail = node.prev
+	}
+	head := l.head
+	l.head = node
+	head.prev = node
+	node.next = head
+	node.prev = nil
+}
+
+func (l *LAReap) OnInsert(key string, entry *Data) {
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now()
+	}
+	entry.LastAccess = time.Now()
+
+	node := &LLnode{
+		key: key,
+	}
+	l.m[key] = node
+	if l.head == nil {
+		l.head = node
+		l.tail = node
+		return
+	}
+
+	l.head.prev = node
+	node.next = l.head
+	l.head = node
+}
+
+func (l *LAReap) OnDelete(key string, entry *Data) {
+	node, ok := l.m[key]
+	if !ok {
+		return
+	}
+	if node.next != nil {
+		node.next.prev = node.prev
+	} else {
+		l.head = node.prev
+	}
+	if node.prev != nil {
+		node.prev.next = node.next
+	} else {
+		l.tail = node.next
+	}
+	delete(l.m, key)
+}
+
+func (l *LAReap) Reap(interval, maxAge time.Duration, cache *Cache) chan struct{} {
+	stopChan := make(chan struct{})
+
+	go func() {
+
+		ticker := time.NewTicker(interval)
+
+		for {
+			select {
+			case <-stopChan:
+				return
+			case <-ticker.C:
+				l.Check(maxAge, cache)
+			}
+		}
+	}()
+
+	return stopChan
+}
+
+func (l *LAReap) Check(maxAge time.Duration, cache *Cache) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	for l.tail != nil {
+		key := l.tail.key
+		entry, ok := cache.data[key]
+		if !ok {
+			l.OnDelete(key, nil)
+			continue
+		}
+
+		if time.Since(entry.LastAccess) > maxAge {
+			cache.DeleteNoLock(key)
+		} else {
+			break
+		}
+	}
+}
+
+// Time Since Created reap
+type CAReap struct {
+	head *LLnode
+	tail *LLnode
+	m    map[string]*LLnode
+}
+
+func (c *CAReap) OnAccess(key string, entry *Data) {
+	entry.LastAccess = time.Now()
+}
+
+func (c *CAReap) OnInsert(key string, entry *Data) {
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now()
+	}
+	entry.LastAccess = time.Now()
+	node := &LLnode{
+		key: key,
+	}
+	c.m[key] = node
+
+	if c.head == nil {
+		c.head = node
+		c.tail = node
+		return
+	}
+	c.head.prev = node
+	node.next = c.head
+	c.head = node
+}
+
+func (c *CAReap) OnDelete(key string, entry *Data) {
+	node, ok := c.m[key]
+	if !ok {
+		return
+	}
+	if node.next != nil {
+		node.next.prev = node.prev
+	} else {
+		c.head = node.prev
+	}
+	if node.prev != nil {
+		node.prev.next = node.next
+	} else {
+		c.tail = node.next
+	}
+	delete(c.m, key)
+}
+
+func (c *CAReap) Reap(interval, maxAge time.Duration, cache *Cache) chan struct{} {
+	stopChan := make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stopChan:
+				return
+			case <-ticker.C:
+				c.Check(maxAge, cache)
+			}
+		}
+	}()
+
+	return stopChan
+}
+
+func (c *CAReap) Check(maxAge time.Duration, cache *Cache) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	for c.tail != nil {
+		key := c.tail.key
+		entry, ok := cache.data[key]
+		if !ok {
+			c.OnDelete(key, nil)
+			continue
+		}
+
+		if time.Since(entry.CreatedAt) > maxAge {
+			cache.DeleteNoLock(key)
+		} else {
+			break
+		}
+	}
 }
 
 // Size based cache eviction
