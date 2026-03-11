@@ -3,6 +3,7 @@ package cache
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -365,4 +366,208 @@ func TestLFUWithSize(t *testing.T) {
 	s.Set(key6, value6)
 	_, exists6 := s.Get(key6)
 	require.False(t, exists6, "This value is to big to include in the cache")
+}
+
+func TestCAReaper(t *testing.T) {
+	s := NewCache()
+	s.AddManagedReaper(NewCAReap(3 * time.Second))
+	s.SetSize(500)
+
+	for _, reaper := range s.Reapers {
+		reaper.Start(1*time.Second, s)
+	}
+
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	BIGBYTE := []byte{}
+	for i := 1; i <= 1000; i++ {
+		BIGBYTE = append(BIGBYTE, 'a')
+	}
+
+	key1 := "1"
+	value1 := &Data{
+		Data: tenByte,
+	}
+
+	key2 := "2"
+	value2 := &Data{
+		Data: BIGBYTE,
+	}
+
+	value3 := &Data{
+		Data: tenByte,
+	}
+
+	value4 := &Data{
+		Data: tenByte,
+	}
+
+	key3 := "3"
+	value5 := &Data{
+		Data: tenByte,
+	}
+
+	s.Set(key1, value1)
+	v1, ok1 := s.Get(key1)
+	require.True(t, ok1, "v1 should exist within data")
+	require.Equal(t, v1, value1.Data, "v1 should equal value1.Data")
+
+	time.Sleep(time.Second * 5)
+	v1, ok1 = s.Get(key1)
+	require.False(t, ok1, "This value should have been reaped")
+
+	s.Set(key2, value2)
+	_, ok2 := s.Get(key2)
+	require.False(t, ok2, "This value is too big to be cached")
+
+	for _, reaper := range s.Reapers {
+		reaper.Close()
+	}
+
+	s.Set(key1, value3)
+	time.Sleep(time.Second * 1)
+	s.Set(key2, value4)
+	time.Sleep(time.Second * 1)
+	s.Set(key3, value5)
+	for _, reaper := range s.Reapers {
+		reaper.Start(1*time.Second, s)
+	}
+	time.Sleep(time.Second * 1)
+	//now we should have reaped the first
+	v1, ok1 = s.Get(key1)
+	require.False(t, ok1, "This value should have been reaped")
+	_, ok2 = s.Get(key2)
+	require.True(t, ok2, "Value 2 is not old enough to reap")
+
+	time.Sleep(time.Second * 1)
+	_, ok2 = s.Get(key2)
+	_, ok3 := s.Get(key3)
+	require.False(t, ok2, "this value should have been reaped")
+	require.True(t, ok3, "This value should still be in the cache (v3)")
+}
+
+func TestLAReaper(t *testing.T) {
+	s := NewCache()
+	s.AddManagedReaper(NewLAReap(3 * time.Second))
+
+	for _, reaper := range s.Reapers {
+		reaper.Start(time.Second*1, s)
+	}
+
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	key1 := "1"
+	key2 := "2"
+	key3 := "3"
+
+	value1 := &Data{
+		Data: tenByte,
+	}
+
+	value2 := &Data{
+		Data: tenByte,
+	}
+
+	value3 := &Data{
+		Data: tenByte,
+	}
+
+	s.Set(key1, value1)
+	s.Set(key2, value2)
+	s.Set(key3, value3)
+
+	v1, ok1 := s.Get(key1)
+	v2, ok2 := s.Get(key2)
+	v3, ok3 := s.Get(key3)
+	require.True(t, ok1, "Key 1 should have an entry")
+	require.Equal(t, v1, value1.Data)
+	require.True(t, ok2, "Key 2 should have an entry")
+	require.Equal(t, v2, value2.Data)
+	require.True(t, ok3, "Key 3 should have an entry")
+	require.Equal(t, v3, value3.Data)
+
+	time.Sleep(1 * time.Second)
+	s.Get(key2)
+	time.Sleep(1 * time.Second)
+	s.Get(key1)
+
+	//Order should be inverted -
+	time.Sleep(1 * time.Second)
+	_, ok3 = s.Get(key3)
+	require.False(t, ok3, "3's last access was over 3s ago")
+	_, ok1 = s.Get(key1)
+	require.True(t, ok1, "1's last access was 1s ago and should not be reaped")
+
+	time.Sleep(1 * time.Second)
+	_, ok2 = s.Get(key2)
+	require.False(t, ok2, "2's last access was over 3s ago and shoul have been reaped")
+}
+
+func TestLAandCAReapers(t *testing.T) {
+	s := NewCache()
+	s.AddManagedReaper(NewCAReap(5 * time.Second))
+	s.AddManagedReaper(NewLAReap(2 * time.Second))
+
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	key1 := "1"
+	key2 := "2"
+	key3 := "3"
+
+	value1 := &Data{
+		Data: tenByte,
+	}
+	value2 := &Data{
+		Data: tenByte,
+	}
+	value3 := &Data{
+		Data: tenByte,
+	}
+
+	for _, reaper := range s.Reapers {
+		reaper.Start(100*time.Millisecond, s)
+	}
+
+	s.Set(key1, value1)
+	time.Sleep(1 * time.Second)
+	s.Set(key2, value2)
+	s.Get(key1)
+	time.Sleep(1 * time.Second)
+	s.Set(key3, value3)
+	v1, ok1 := s.Get(key1)
+	v2, ok2 := s.Get(key2)
+	v3, ok3 := s.Get(key3)
+
+	require.True(t, ok1, "All values should be in the cache")
+	require.True(t, ok2, "All values should be in the cache")
+	require.True(t, ok3, "All values should be in the cache")
+	require.Equal(t, v1, value1.Data)
+	require.Equal(t, v2, value2.Data)
+	require.Equal(t, v3, value3.Data)
+
+	time.Sleep(1 * time.Second)
+	s.Get(key1)
+	s.Get(key3)
+
+	time.Sleep(1100 * time.Millisecond)
+	_, ok2 = s.Get(key2)
+	require.False(t, ok2, "2 should have been reaped by thet last access reaper")
+	_, ok3 = s.Get(key3)
+	_, ok1 = s.Get(key1)
+	require.True(t, ok1, "1 and 3 should still be in the cache")
+	require.True(t, ok3, "1 and 3 should still be in the cache")
+
+	time.Sleep(1 * time.Second)
+	//Finally, 1 should be reaped based on the created at
+	_, ok1 = s.Get(key1)
+	require.False(t, ok1, "Key 1 should have been reaped based on its created at")
 }

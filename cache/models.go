@@ -21,10 +21,9 @@ type Cache struct {
 	perm            map[string]*Data
 	policy          EvictionPolicy
 	maxSize         int
-	maxAge          time.Duration
 	currentSize     int
 	currentPermSize int
-	Reapers         []ManagedReaper
+	Reapers         []*ManagedReaper
 }
 
 type ManagedReaper struct {
@@ -32,25 +31,32 @@ type ManagedReaper struct {
 	StopCh chan struct{}
 }
 
-func (m ManagedReaper) Close() {
+func (m *ManagedReaper) Close() {
 	close(m.StopCh)
 }
 
-func (m ManagedReaper) Start(interval time.Duration, c *Cache) {
-	s := m.Loop.Reap(interval, c.maxAge, c)
+func (m *ManagedReaper) Start(interval time.Duration, c *Cache) {
+	s := m.Loop.Reap(interval, c)
 	m.StopCh = s
 }
 
-func (m ManagedReaper) onInsert(key string, entry *Data) {
+func (m *ManagedReaper) onInsert(key string, entry *Data) {
 	m.Loop.onInsert(key, entry)
 }
 
-func (m ManagedReaper) onAccess(key string, entry *Data) {
+func (m *ManagedReaper) onAccess(key string, entry *Data) {
 	m.Loop.onAccess(key, entry)
 }
 
-func (m ManagedReaper) onDelete(key string, entry *Data) {
+func (m *ManagedReaper) onDelete(key string, entry *Data) {
 	m.Loop.onDelete(key, entry)
+}
+
+func (c *Cache) AddManagedReaper(m TimeReap) {
+	r := &ManagedReaper{
+		Loop: m,
+	}
+	c.Reapers = append(c.Reapers, r)
 }
 
 func NewCache() *Cache {
@@ -90,15 +96,6 @@ func (c *Cache) SetSize(i int) {
 	c.maxSize = i
 	if c.maxSize < 0 {
 		c.maxSize = 0
-	}
-}
-
-func (c *Cache) SetMaxAge(i int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.maxAge = time.Duration(i) * time.Second
-	if c.maxAge < 0 {
-		c.maxAge = 0
 	}
 }
 

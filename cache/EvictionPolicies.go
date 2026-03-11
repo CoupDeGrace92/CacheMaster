@@ -44,7 +44,7 @@ type TimeReap interface {
 	onInsert(key string, entry *Data)
 	onAccess(key string, entry *Data)
 	onDelete(key string, entry *Data)
-	Reap(interval, maxAge time.Duration, cache *Cache) chan struct{}
+	Reap(interval time.Duration, cache *Cache) chan struct{}
 }
 
 type EvictionPolicy interface {
@@ -409,12 +409,20 @@ func (p *LFUPolicy) SelectVictim() (key string) {
 // TIME BASED REAP POLICIES
 // Last Access reap
 type LAReap struct {
-	head *LLnode
-	tail *LLnode
-	m    map[string]*LLnode
+	head   *LLnode
+	tail   *LLnode
+	m      map[string]*LLnode
+	maxAge time.Duration
 }
 
-func (l *LAReap) OnAccess(key string, entry *Data) {
+func NewLAReap(maxAge time.Duration) *LAReap {
+	return &LAReap{
+		m:      make(map[string]*LLnode),
+		maxAge: maxAge,
+	}
+}
+
+func (l *LAReap) onAccess(key string, entry *Data) {
 	entry.LastAccess = time.Now()
 	node := l.m[key]
 	if l.head == node {
@@ -435,7 +443,7 @@ func (l *LAReap) OnAccess(key string, entry *Data) {
 	node.prev = nil
 }
 
-func (l *LAReap) OnInsert(key string, entry *Data) {
+func (l *LAReap) onInsert(key string, entry *Data) {
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now()
 	}
@@ -456,7 +464,7 @@ func (l *LAReap) OnInsert(key string, entry *Data) {
 	l.head = node
 }
 
-func (l *LAReap) OnDelete(key string, entry *Data) {
+func (l *LAReap) onDelete(key string, entry *Data) {
 	node, ok := l.m[key]
 	if !ok {
 		return
@@ -464,17 +472,17 @@ func (l *LAReap) OnDelete(key string, entry *Data) {
 	if node.next != nil {
 		node.next.prev = node.prev
 	} else {
-		l.head = node.prev
+		l.tail = node.prev
 	}
 	if node.prev != nil {
 		node.prev.next = node.next
 	} else {
-		l.tail = node.next
+		l.head = node.next
 	}
 	delete(l.m, key)
 }
 
-func (l *LAReap) Reap(interval, maxAge time.Duration, cache *Cache) chan struct{} {
+func (l *LAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
 	stopChan := make(chan struct{})
 
 	go func() {
@@ -486,7 +494,7 @@ func (l *LAReap) Reap(interval, maxAge time.Duration, cache *Cache) chan struct{
 			case <-stopChan:
 				return
 			case <-ticker.C:
-				l.Check(maxAge, cache)
+				l.Check(l.maxAge, cache)
 			}
 		}
 	}()
@@ -502,7 +510,7 @@ func (l *LAReap) Check(maxAge time.Duration, cache *Cache) {
 		key := l.tail.key
 		entry, ok := cache.data[key]
 		if !ok {
-			l.OnDelete(key, nil)
+			l.onDelete(key, nil)
 			continue
 		}
 
@@ -516,16 +524,24 @@ func (l *LAReap) Check(maxAge time.Duration, cache *Cache) {
 
 // Time Since Created reap
 type CAReap struct {
-	head *LLnode
-	tail *LLnode
-	m    map[string]*LLnode
+	head   *LLnode
+	tail   *LLnode
+	m      map[string]*LLnode
+	maxAge time.Duration
 }
 
-func (c *CAReap) OnAccess(key string, entry *Data) {
+func NewCAReap(maxAge time.Duration) *CAReap {
+	return &CAReap{
+		m:      make(map[string]*LLnode),
+		maxAge: maxAge,
+	}
+}
+
+func (c *CAReap) onAccess(key string, entry *Data) {
 	entry.LastAccess = time.Now()
 }
 
-func (c *CAReap) OnInsert(key string, entry *Data) {
+func (c *CAReap) onInsert(key string, entry *Data) {
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now()
 	}
@@ -545,7 +561,7 @@ func (c *CAReap) OnInsert(key string, entry *Data) {
 	c.head = node
 }
 
-func (c *CAReap) OnDelete(key string, entry *Data) {
+func (c *CAReap) onDelete(key string, entry *Data) {
 	node, ok := c.m[key]
 	if !ok {
 		return
@@ -553,17 +569,17 @@ func (c *CAReap) OnDelete(key string, entry *Data) {
 	if node.next != nil {
 		node.next.prev = node.prev
 	} else {
-		c.head = node.prev
+		c.tail = node.prev
 	}
 	if node.prev != nil {
 		node.prev.next = node.next
 	} else {
-		c.tail = node.next
+		c.head = node.next
 	}
 	delete(c.m, key)
 }
 
-func (c *CAReap) Reap(interval, maxAge time.Duration, cache *Cache) chan struct{} {
+func (c *CAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
 	stopChan := make(chan struct{})
 
 	go func() {
@@ -575,7 +591,7 @@ func (c *CAReap) Reap(interval, maxAge time.Duration, cache *Cache) chan struct{
 			case <-stopChan:
 				return
 			case <-ticker.C:
-				c.Check(maxAge, cache)
+				c.Check(c.maxAge, cache)
 			}
 		}
 	}()
@@ -591,7 +607,7 @@ func (c *CAReap) Check(maxAge time.Duration, cache *Cache) {
 		key := c.tail.key
 		entry, ok := cache.data[key]
 		if !ok {
-			c.OnDelete(key, nil)
+			c.onDelete(key, nil)
 			continue
 		}
 
@@ -603,20 +619,7 @@ func (c *CAReap) Check(maxAge time.Duration, cache *Cache) {
 	}
 }
 
-// Size based cache eviction
-func OldestEntry() {
-
-}
-
-func ReapLargest() {
-
-}
-
 // More Complex Solutions
 func CacheIncubation() {
-
-}
-
-func WeightedEviction() {
 
 }
