@@ -5,41 +5,6 @@ import (
 	"time"
 )
 
-// Time based cache eviction
-// Create linked list, reap tail until we find object not ready for reaping, then wait ticker
-func (c *Cache) LastAccessReap(interval time.Duration, l *LAReapList) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for t := range ticker.C {
-		l.Reap(t, interval)
-	}
-}
-
-func (l *LAReapList) Reap(t time.Time, interval time.Duration) {
-
-}
-
-type LAReapList struct {
-	head *LLnode
-	tail *LLnode
-}
-
-// we can be more efficient here if we organize it into a linked list - inserted at creation
-func (c *Cache) TimeSinceCreationReap(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for t := range ticker.C {
-		for key, entry := range c.data {
-			delTime := entry.CreatedAt.Add(interval)
-			if delTime.Compare(t) == -1 {
-				c.Delete(key)
-			}
-		}
-	}
-}
-
 type TimeReap interface {
 	onInsert(key string, entry *Data)
 	onAccess(key string, entry *Data)
@@ -51,6 +16,7 @@ type EvictionPolicy interface {
 	OnInsert(key string, entry *Data)
 	OnAccess(key string, entry *Data)
 	OnDelete(key string, entry *Data)
+	Contains(key string) bool
 	SelectVictim() string
 	//think about adding OnUpdate
 }
@@ -72,6 +38,11 @@ func NewLRUPolicy() *LRUPolicy {
 	return &LRUPolicy{
 		nodeMap: make(map[string]*LLnode),
 	}
+}
+
+func (p *LRUPolicy) Contains(key string) bool {
+	_, ok := p.nodeMap[key]
+	return ok
 }
 
 func (p *LRUPolicy) OnInsert(key string, entry *Data) {
@@ -179,6 +150,11 @@ func NewLFUPolicy() *LFUPolicy {
 		buckets: make(map[int]*Bucket),
 		nodeMap: make(map[string]*LLnode),
 	}
+}
+
+func (p *LFUPolicy) Contains(key string) bool {
+	_, ok := p.nodeMap[key]
+	return ok
 }
 
 func (p *LFUPolicy) addToBucket(node *LLnode, prevBucket *Bucket, entry *Data) {
@@ -620,6 +596,29 @@ func (c *CAReap) Check(maxAge time.Duration, cache *Cache) {
 }
 
 // More Complex Solutions
-func CacheIncubation() {
+type TieredPolicy struct {
+	Nursery EvictionPolicy
+	Mature  EvictionPolicy
+	sTime   time.Duration
+	pFreq   int
+}
 
+func (t *TieredPolicy) OnAccess(key string, entry *Data) {
+
+}
+
+func (t *TieredPolicy) OnInsert(key string, entry *Data) {
+
+}
+
+func (t *TieredPolicy) OnDelete(key string, entry *Data) {
+
+}
+
+func (t *TieredPolicy) Contains(key string) bool {
+	return false
+}
+
+func (t *TieredPolicy) SelectVictim() string {
+	return ""
 }
