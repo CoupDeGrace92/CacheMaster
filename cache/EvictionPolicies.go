@@ -650,13 +650,14 @@ func (t *TieredPolicy) OnAccess(key string, entry *Data) {
 		if t.NurseryReaper != nil {
 			t.NurseryReaper.onAccess(key, entry)
 		}
+		if entry.Count >= t.pFreq || time.Now().After(entry.CreatedAt.Add(t.sTime)) {
+			t.Promote(key, entry)
+		}
 	case t.Mature.Contains(key):
 		t.Mature.OnAccess(key, entry)
 	default:
 	}
-	if entry.Count >= t.pFreq || time.Now().After(entry.CreatedAt.Add(t.sTime)) {
-		t.Promote(key, entry)
-	}
+
 }
 
 func (t *TieredPolicy) OnInsert(key string, entry *Data) {
@@ -722,10 +723,8 @@ func (t *TieredPolicy) Sizing(d *Data, c *Cache) (add bool) {
 	}
 	for size+t.matureSize >= t.maxMatureSize {
 		key := t.Mature.SelectVictim()
-		if data, ok := c.data[key]; ok {
-			c.currentSize -= data.SizeOf()
-			t.matureSize -= data.SizeOf()
-			c.Delete(key)
+		if _, ok := c.data[key]; ok {
+			c.DeleteNoLock(key)
 		}
 	}
 	t.matureSize += size

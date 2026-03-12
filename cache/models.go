@@ -264,9 +264,8 @@ func (c *Cache) Sizing(d *Data, currentDataSize int) (add bool) {
 	for size+c.currentSize >= c.maxSize {
 		key := c.policy.SelectVictim()
 		if data, ok := c.data[key]; ok {
-			c.currentSize -= data.SizeOf()
 			c.policy.OnDelete(key, data)
-			c.Delete(key)
+			c.DeleteNoLock(key)
 		}
 	}
 	c.currentSize += size

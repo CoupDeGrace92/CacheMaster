@@ -196,6 +196,7 @@ func TestLRUUpdate(t *testing.T) {
 	require.True(t, exists1, "Key one should not be reaped")
 	require.False(t, exists2, "Key two should be reaped")
 	require.Equal(t, v1, value3.Data, "Key one should contain updated data")
+	t.Logf("key1's freq: %v\n", s.data[key1].Count)
 }
 
 func TestLRUPerm(t *testing.T) {
@@ -292,6 +293,7 @@ func TestLRUWithSize(t *testing.T) {
 	s.Set(key1, value1) //this should cause an eviction of key2 even though it was more recently grabbed
 	_, exists2 = s.Get(key2)
 	require.False(t, exists2, "Should be evicted because the other option is permmed")
+	t.Logf("Key3's freq: %v\n", s.perm[key3].Count)
 }
 
 func TestLFUWithSize(t *testing.T) {
@@ -359,6 +361,7 @@ func TestLFUWithSize(t *testing.T) {
 	require.Equal(t, v4, value4.Data)
 	require.Equal(t, value4.Count, 3, "key 4 should be in bucket 3")
 
+	t.Logf("key4's freq: %v\n", s.data[key4].Count)
 	//Now if we eject a value, it should be key1 from bucket 2
 	s.Set(key5, value5)
 	_, exists1 = s.Get(key1)
@@ -367,6 +370,7 @@ func TestLFUWithSize(t *testing.T) {
 	s.Set(key6, value6)
 	_, exists6 := s.Get(key6)
 	require.False(t, exists6, "This value is to big to include in the cache")
+
 }
 
 func TestCAReaper(t *testing.T) {
@@ -627,4 +631,199 @@ func TestBasicTiered(t *testing.T) {
 	v2, ok2 = s.Get(key2)
 	require.True(t, ok2, "Key 2 should be in the mature cache")
 	require.Equal(t, v2, value2.Data)
+	t.Logf("key2's freq: %v\n", s.data[key2].Count)
+}
+
+func TestErrorCreatingCache(t *testing.T) {
+	s := NewCache()
+	n := NewLRUPolicy()
+	m := NewLFUPolicy()
+	maxAge := time.Duration(10 * time.Second)
+	_, err1 := NewTieredPolicy(nil, n, nil, time.Duration(0), s)
+	assert.Error(t, err1, "No nursery eviction policy should error")
+
+	_, err2 := NewTieredPolicy(m, nil, nil, time.Duration(0), s)
+	assert.Error(t, err2, "No mature eviction policy should error")
+
+	_, err3 := NewTieredPolicy(n, m, NewLAReap(maxAge), time.Duration(0), s)
+	assert.Error(t, err3, "No interval with existing reaper should error")
+
+	_, err4 := NewTieredPolicy(n, m, NewLAReap(maxAge), time.Duration(100*time.Millisecond), nil)
+	assert.Error(t, err4, "No parent cache should error")
+
+	_, err5 := NewTieredPolicy(n, m, NewLAReap(maxAge), time.Duration(100*time.Millisecond), s)
+	assert.NoError(t, err5, "Properly specified, should not error")
+}
+
+func TestObjectTooBigForMature(t *testing.T) {
+	s := NewCache()
+	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
+	assert.NoError(t, err, "Policy should have initialized")
+	n.SetMaxMatureSize(200)
+	n.SetPromotionFreq(3)
+	s.SetSize(1100)
+	s.policy = n
+
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	thousandByte := []byte{}
+	for i := 1; i <= 910; i++ {
+		thousandByte = append(thousandByte, 'a')
+	}
+
+	key1 := "1"
+	key2 := "2"
+	key3 := "3"
+
+	value1 := &Data{
+		Data: tenByte,
+	}
+	value2 := &Data{
+		Data: thousandByte,
+	}
+	value3 := &Data{
+		Data: tenByte,
+	}
+
+	s.Set(key1, value1)
+	v1, ok1 := s.Get(key1)
+	assert.True(t, ok1, "key1 should be in cache")
+	assert.Equal(t, v1, value1.Data)
+	s.Set(key2, value2)
+	v2, ok2 := s.Get(key2)
+	assert.True(t, ok2, "key2 is small enough for the cache")
+	assert.Equal(t, v2, value2.Data)
+	s.Get(key1) //This should promote key1
+	s.Get(key2) //This should try to promote key2 but fail - and this is more recently accessed
+	s.Set(key3, value3)
+	v3, ok3 := s.Get(key3)
+	assert.True(t, ok3, "key 3 should be in the cache")
+	assert.Equal(t, v3, value3.Data)
+	_, ok2 = s.Get(key2)
+	assert.False(t, ok2, "key2 should have been ejected because it did not become mature")
+	_, ok1 = s.Get(key1)
+	assert.True(t, ok1, "key1 was never ejected from mature due to sizing and victim should have been selected from nursery")
+}
+
+func TestMatureEvictionsForSize(t *testing.T) {
+	s := NewCache()
+	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
+	s.policy = n
+	require.NoError(t, err)
+	n.SetMaxMatureSize(200)
+	s.SetSize(400)
+	n.SetPromotionFreq(3)
+
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	key1 := "1"
+	key2 := "2"
+	key3 := "3"
+	key4 := "4"
+
+	value1 := &Data{
+		Data: tenByte,
+	}
+	value2 := &Data{
+		Data: tenByte,
+	}
+	value3 := &Data{
+		Data: tenByte,
+	}
+	value4 := &Data{
+		Data: tenByte,
+	}
+
+	s.Set(key1, value1)
+	s.Set(key2, value2)
+	s.Set(key3, value3)
+	for i := 0; i < 3; i++ {
+		s.Get(key2)
+		s.Get(key1) //this leaves key1 as the most recently used
+	}
+	fmt.Println("Mature Size:", n.matureSize)
+	fmt.Println("pFreq:", n.pFreq)
+	s.Set(key4, value4)
+	for i := 0; i < 3; i++ {
+		s.Get(key4) //this should promote, require a reap in the mature
+	}
+
+	fmt.Println("Mature Size2:", n.matureSize)
+
+	_, ok1 := s.Get(key1)
+	fmt.Println("v1 freq:", s.data[key1].Count)
+	_, ok2 := s.Get(key2)
+	_, ok3 := s.Get(key3)
+	_, ok4 := s.Get(key4)
+	assert.True(t, ok1, "key1 was more recently used than key2 so should be in the mature cache")
+	assert.False(t, ok2, "key2 should have been evicted from the mature cache")
+	assert.True(t, ok3, "key3 should still be in the nursery cache")
+	assert.True(t, ok4, "key4 should be just promoted in the mature cache")
+	t.Logf("Cache Size: %v\n", s.currentSize)
+}
+
+func TestTieredWithTimed(t *testing.T) {
+	s := NewCache()
+	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), NewLAReap(time.Duration(1*time.Second)), time.Duration(100*time.Millisecond), s)
+	assert.NoError(t, err)
+	n.SetPromotionFreq(3)
+	n.SetMaxMatureSize(200)
+	s.policy = n
+	s.SetSize(400)
+
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	key1 := "1"
+	key2 := "2"
+	key3 := "3"
+	key4 := "4"
+
+	value1 := &Data{
+		Data: tenByte,
+	}
+	value2 := &Data{
+		Data: tenByte,
+	}
+	value3 := &Data{
+		Data: tenByte,
+	}
+	value4 := &Data{
+		Data: tenByte,
+	}
+
+	s.Set(key1, value1)
+	s.Set(key2, value2)
+	s.Set(key3, value3)
+	s.Set(key4, value4)
+
+	s.Get(key1)
+	s.Get(key1) //Should trigger a promotion - now we will not touch to see if it gets culled
+
+	time.Sleep(time.Millisecond * 500)
+	s.Get(key3)
+	s.Get(key4)
+
+	time.Sleep(time.Millisecond * 700) //enough time has passed with an offset the reaper should have activated
+	_, ok2 := s.Get(key2)
+	require.False(t, ok2, "This value should not have been reaped")
+	_, ok1 := s.Get(key1)
+	require.True(t, ok1, "This value should not be reaped out of the mature cache")
+	s.Set(key2, &Data{
+		Data: tenByte,
+	})
+	s.Set("5", &Data{
+		Data: tenByte,
+	}) //This should trigger a size based reap of key3
+
+	_, ok3 := s.Get(key3)
+	require.False(t, ok3, "Size based reap of 3 should have occured")
 }
