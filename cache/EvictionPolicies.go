@@ -9,6 +9,7 @@ type TimeReap interface {
 	onInsert(key string, entry *Data)
 	onAccess(key string, entry *Data)
 	onDelete(key string, entry *Data)
+	SoftDelete(key string, entry *Data)
 	Reap(interval time.Duration, cache *Cache) chan struct{}
 }
 
@@ -16,6 +17,7 @@ type EvictionPolicy interface {
 	OnInsert(key string, entry *Data)
 	OnAccess(key string, entry *Data)
 	OnDelete(key string, entry *Data)
+	SoftDelete(key string, entry *Data)
 	Contains(key string) bool
 	SelectVictim() string
 	//think about adding OnUpdate
@@ -75,6 +77,14 @@ func (p *LRUPolicy) OnDelete(key string, entry *Data) {
 	}
 	p.removeNode(node)
 	delete(p.nodeMap, key)
+}
+
+func (p *LRUPolicy) SoftDelete(key string, entry *Data) {
+	node, ok := p.nodeMap[key]
+	if !ok {
+		return
+	}
+	p.removeNode(node)
 }
 
 func (p *LRUPolicy) SelectVictim() (key string) {
@@ -376,6 +386,14 @@ func (p *LFUPolicy) OnDelete(key string, entry *Data) {
 	delete(p.nodeMap, key)
 }
 
+func (p *LFUPolicy) SoftDelete(key string, entry *Data) {
+	node, ok := p.nodeMap[key]
+	if !ok {
+		return
+	}
+	p.removeFromBucket(entry, node)
+}
+
 func (p *LFUPolicy) SelectVictim() (key string) {
 	key = p.removeFromBucketTail()
 	delete(p.nodeMap, key)
@@ -456,6 +474,23 @@ func (l *LAReap) onDelete(key string, entry *Data) {
 		l.head = node.next
 	}
 	delete(l.m, key)
+}
+
+func (l *LAReap) SoftDelete(key string, entry *Data) {
+	node, ok := l.m[key]
+	if !ok {
+		return
+	}
+	if node.next != nil {
+		node.next.prev = node.prev
+	} else {
+		l.tail = node.prev
+	}
+	if node.prev != nil {
+		node.prev.next = node.next
+	} else {
+		l.head = node.next
+	}
 }
 
 func (l *LAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
@@ -555,6 +590,23 @@ func (c *CAReap) onDelete(key string, entry *Data) {
 	delete(c.m, key)
 }
 
+func (c *CAReap) SoftDelete(key string, entry *Data) {
+	node, ok := c.m[key]
+	if !ok {
+		return
+	}
+	if node.next != nil {
+		node.next.prev = node.prev
+	} else {
+		c.tail = node.prev
+	}
+	if node.prev != nil {
+		node.prev.next = node.next
+	} else {
+		c.head = node.next
+	}
+}
+
 func (c *CAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
 	stopChan := make(chan struct{})
 
@@ -597,28 +649,99 @@ func (c *CAReap) Check(maxAge time.Duration, cache *Cache) {
 
 // More Complex Solutions
 type TieredPolicy struct {
-	Nursery EvictionPolicy
-	Mature  EvictionPolicy
-	sTime   time.Duration
-	pFreq   int
+	Nursery       EvictionPolicy
+	NurseryReaper TimeReap
+	Mature        EvictionPolicy
+	sTime         time.Duration
+	pFreq         int
+	matureSize    int
+	maxMatureSize int
+	parentCache   *Cache
 }
 
 func (t *TieredPolicy) OnAccess(key string, entry *Data) {
-
+	switch {
+	case t.Nursery.Contains(key):
+		t.Nursery.OnAccess(key, entry)
+		if t.NurseryReaper != nil {
+			t.NurseryReaper.onAccess(key, entry)
+		}
+	case t.Mature.Contains(key):
+		t.Mature.OnAccess(key, entry)
+	default:
+	}
+	if entry.Count >= t.pFreq || time.Now().After(entry.CreatedAt.Add(t.sTime)) {
+		t.Promote(key, entry)
+	}
 }
 
 func (t *TieredPolicy) OnInsert(key string, entry *Data) {
-
+	t.Nursery.OnInsert(key, entry)
+	if t.NurseryReaper != nil {
+		t.NurseryReaper.onInsert(key, entry)
+	}
 }
 
 func (t *TieredPolicy) OnDelete(key string, entry *Data) {
-
+	switch {
+	case t.Nursery.Contains(key):
+		t.Nursery.OnDelete(key, entry)
+		if t.NurseryReaper != nil {
+			t.NurseryReaper.SoftDelete(key, entry)
+		}
+	case t.Mature.Contains(key):
+		t.Mature.OnDelete(key, entry)
+		t.matureSize -= entry.SizeOf()
+	default:
+		return
+	}
 }
 
 func (t *TieredPolicy) Contains(key string) bool {
+	if t.Nursery.Contains(key) || t.Mature.Contains(key) {
+		return true
+	}
 	return false
 }
 
 func (t *TieredPolicy) SelectVictim() string {
-	return ""
+	if t.Nursery.SelectVictim() != "" {
+		return t.Nursery.SelectVictim()
+	} else {
+		return t.Mature.SelectVictim()
+	}
+}
+
+func (t *TieredPolicy) Promote(key string, entry *Data) {
+	if !t.Nursery.Contains(key) {
+		return
+	}
+	if ok := t.Sizing(entry, t.parentCache); ok {
+		t.Nursery.SoftDelete(key, entry) //soft delete designed explicitly for this - we don't want to delete and reinsert into cache map
+		t.Mature.OnInsert(key, entry)
+		t.NurseryReaper.SoftDelete(key, entry)
+	}
+}
+
+func (t *TieredPolicy) Sizing(d *Data, c *Cache) (add bool) {
+	add = true
+	size := d.SizeOf()
+	if size < 0 {
+		t.matureSize += size
+		return
+	}
+	if size >= t.maxMatureSize {
+		add = false
+		return
+	}
+	for size+t.matureSize >= t.maxMatureSize {
+		key := t.Mature.SelectVictim()
+		if data, ok := c.data[key]; ok {
+			c.currentSize -= data.SizeOf()
+			t.matureSize -= data.SizeOf()
+			delete(c.data, key)
+		}
+	}
+	t.matureSize += size
+	return
 }
