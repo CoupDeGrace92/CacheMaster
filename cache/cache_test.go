@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -570,4 +571,60 @@ func TestLAandCAReapers(t *testing.T) {
 	//Finally, 1 should be reaped based on the created at
 	_, ok1 = s.Get(key1)
 	require.False(t, ok1, "Key 1 should have been reaped based on its created at")
+}
+
+func TestBasicTiered(t *testing.T) {
+	s := NewCache()
+	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
+	assert.NoError(t, err, "Policy should have initialized")
+	n.SetMaxMatureSize(200)
+	n.SetPromotionFreq(4)
+	s.SetSize(300)
+	s.policy = n
+
+	tenByte := []byte{}
+	for i := 1; i <= 10; i++ {
+		tenByte = append(tenByte, 'a')
+	}
+
+	key1 := "1"
+	key2 := "2"
+	key3 := "3"
+	key4 := "4"
+
+	value1 := &Data{
+		Data: tenByte,
+	}
+	value2 := &Data{
+		Data: tenByte,
+	}
+	value3 := &Data{
+		Data: tenByte,
+	}
+	value4 := &Data{
+		Data: tenByte,
+	}
+
+	s.Set(key1, value1)
+	v1, ok1 := s.Get(key1)
+	require.True(t, ok1, "Key1 should be in the cache")
+	require.Equal(t, v1, value1.Data)
+	s.Set(key2, value2)
+	v2, ok2 := s.Get(key2)
+	require.True(t, ok2, "Key 2 should be in the cache")
+	require.Equal(t, v2, value2.Data)
+	s.Get(key2)
+	s.Get(key2) //this should trigger a promotion
+	s.Set(key3, value3)
+	s.Get(key1)         //no promotion yet
+	s.Set(key4, value4) //This should trigger an eviction - 3 should be evicted
+
+	v4, ok4 := s.Get(key4)
+	require.True(t, ok4, "Key4 should be in the cache")
+	require.Equal(t, v4, value4.Data)
+	_, ok3 := s.Get(key3)
+	require.False(t, ok3, "key 3 should have been evicted")
+	v2, ok2 = s.Get(key2)
+	require.True(t, ok2, "Key 2 should be in the mature cache")
+	require.Equal(t, v2, value2.Data)
 }
