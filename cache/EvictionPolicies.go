@@ -7,49 +7,49 @@ import (
 )
 
 type TimeReap interface {
-	onInsert(key string, entry *Data)
-	onAccess(key string, entry *Data)
-	onDelete(key string, entry *Data)
-	Reap(interval time.Duration, cache *Cache) chan struct{}
+	onInsert(key string, entry *data)
+	onAccess(key string, entry *data)
+	onDelete(key string, entry *data)
+	Reap(interval time.Duration, cache *cache) chan struct{}
 }
 
 type EvictionPolicy interface {
-	OnInsert(key string, entry *Data)
-	OnAccess(key string, entry *Data)
-	OnDelete(key string, entry *Data)
-	Contains(key string) bool
-	SelectVictim() string
+	onInsert(key string, entry *data)
+	onAccess(key string, entry *data)
+	onDelete(key string, entry *data)
+	contains(key string) bool
+	selectVictim() string
 	//think about adding OnUpdate
 }
 
 // THE FIRST POLICY - LRU
-type LRUPolicy struct {
-	head    *LLnode
-	tail    *LLnode
-	nodeMap map[string]*LLnode
+type lruPolicy struct {
+	head    *llNode
+	tail    *llNode
+	nodeMap map[string]*llNode
 }
 
-type LLnode struct {
+type llNode struct {
 	key  string
-	prev *LLnode
-	next *LLnode
+	prev *llNode
+	next *llNode
 }
 
-func NewLRUPolicy() *LRUPolicy {
-	return &LRUPolicy{
-		nodeMap: make(map[string]*LLnode),
+func newLRUPolicy() *lruPolicy {
+	return &lruPolicy{
+		nodeMap: make(map[string]*llNode),
 	}
 }
 
-func (p *LRUPolicy) Contains(key string) bool {
+func (p *lruPolicy) contains(key string) bool {
 	_, ok := p.nodeMap[key]
 	return ok
 }
 
-func (p *LRUPolicy) OnInsert(key string, entry *Data) {
+func (p *lruPolicy) onInsert(key string, entry *data) {
 	node, ok := p.nodeMap[key]
 	if !ok {
-		node = &LLnode{
+		node = &llNode{
 			key: key,
 		}
 		p.nodeMap[key] = node
@@ -62,14 +62,14 @@ func (p *LRUPolicy) OnInsert(key string, entry *Data) {
 	p.moveToHead(node)
 }
 
-func (p *LRUPolicy) OnAccess(key string, entry *Data) {
+func (p *lruPolicy) onAccess(key string, entry *data) {
 	node := p.nodeMap[key]
 	entry.Count++
 	entry.LastAccess = time.Now()
 	p.moveToHead(node)
 }
 
-func (p *LRUPolicy) OnDelete(key string, entry *Data) {
+func (p *lruPolicy) onDelete(key string, entry *data) {
 	node, ok := p.nodeMap[key]
 	if !ok {
 		return
@@ -78,7 +78,7 @@ func (p *LRUPolicy) OnDelete(key string, entry *Data) {
 	delete(p.nodeMap, key)
 }
 
-func (p *LRUPolicy) SelectVictim() (key string) {
+func (p *lruPolicy) selectVictim() (key string) {
 	if p.tail == nil {
 		return ""
 	}
@@ -86,7 +86,7 @@ func (p *LRUPolicy) SelectVictim() (key string) {
 	return
 }
 
-func (p *LRUPolicy) moveToHead(c *LLnode) {
+func (p *lruPolicy) moveToHead(c *llNode) {
 	if p.head == c {
 		return
 	}
@@ -111,7 +111,7 @@ func (p *LRUPolicy) moveToHead(c *LLnode) {
 	}
 }
 
-func (p *LRUPolicy) removeNode(c *LLnode) {
+func (p *lruPolicy) removeNode(c *llNode) {
 	if p.head == p.tail {
 		p.head = nil
 		p.tail = nil
@@ -131,34 +131,34 @@ func (p *LRUPolicy) removeNode(c *LLnode) {
 }
 
 // THE SECOND POLICY - LFU
-type LFUPolicy struct {
+type lfuPolicy struct {
 	buckets map[int]*Bucket
-	nodeMap map[string]*LLnode
+	nodeMap map[string]*llNode
 	minFreq int
 }
 
 type Bucket struct {
-	head *LLnode
-	tail *LLnode
+	head *llNode
+	tail *llNode
 	next *Bucket
 	prev *Bucket
 	id   int
 }
 
-func NewLFUPolicy() *LFUPolicy {
-	return &LFUPolicy{
+func NewLFUPolicy() *lfuPolicy {
+	return &lfuPolicy{
 		minFreq: 0,
 		buckets: make(map[int]*Bucket),
-		nodeMap: make(map[string]*LLnode),
+		nodeMap: make(map[string]*llNode),
 	}
 }
 
-func (p *LFUPolicy) Contains(key string) bool {
+func (p *lfuPolicy) contains(key string) bool {
 	_, ok := p.nodeMap[key]
 	return ok
 }
 
-func (p *LFUPolicy) addToBucket(node *LLnode, prevBucket *Bucket, entry *Data) {
+func (p *lfuPolicy) addToBucket(node *llNode, prevBucket *Bucket, entry *data) {
 	bucket, ok := p.buckets[entry.Count]
 	if !ok {
 		var next *Bucket
@@ -195,7 +195,7 @@ func (p *LFUPolicy) addToBucket(node *LLnode, prevBucket *Bucket, entry *Data) {
 	}
 }
 
-func (p *LFUPolicy) removeFromBucketTail() (key string) {
+func (p *lfuPolicy) removeFromBucketTail() (key string) {
 	if len(p.buckets) == 0 {
 		return
 	}
@@ -224,7 +224,7 @@ func (p *LFUPolicy) removeFromBucketTail() (key string) {
 	return
 }
 
-func (p *LFUPolicy) removeFromBucket(entry *Data, node *LLnode) (previous *Bucket) {
+func (p *lfuPolicy) removeFromBucket(entry *data, node *llNode) (previous *Bucket) {
 	bucket := p.buckets[entry.Count]
 	if bucket.head == bucket.tail {
 		n := bucket.next
@@ -269,7 +269,7 @@ func (p *LFUPolicy) removeFromBucket(entry *Data, node *LLnode) (previous *Bucke
 	return
 }
 
-func (p *LFUPolicy) promoteRemove(entry *Data, node *LLnode) (previous *Bucket) {
+func (p *lfuPolicy) promoteRemove(entry *data, node *llNode) (previous *Bucket) {
 	bucket := p.buckets[entry.Count]
 	if bucket.head == bucket.tail {
 		previous = bucket.prev
@@ -307,7 +307,7 @@ func (p *LFUPolicy) promoteRemove(entry *Data, node *LLnode) (previous *Bucket) 
 
 // Right now this function only works for items without history we create a data item with no
 // history in the cache and insert it in the first bucket
-func (p *LFUPolicy) OnInsert(key string, entry *Data) {
+func (p *lfuPolicy) onInsert(key string, entry *data) {
 	entry.LastAccess = time.Now()
 	if entry.Count > 1 {
 		p.OnInsertGeneric(key, entry)
@@ -315,23 +315,23 @@ func (p *LFUPolicy) OnInsert(key string, entry *Data) {
 	}
 	entry.CreatedAt = time.Now()
 	entry.Count = 1
-	node := &LLnode{
+	node := &llNode{
 		key: key,
 	}
 	p.nodeMap[key] = node
 	p.addToBucket(node, nil, entry)
 }
 
-func (p *LFUPolicy) OnInsertGeneric(key string, entry *Data) {
+func (p *lfuPolicy) OnInsertGeneric(key string, entry *data) {
 	entry.LastAccess = time.Now()
 	entry.Count++
 
 	//We can speed this up by calling the generic method if the count is just one.
 	if entry.Count == 1 {
-		p.OnInsert(key, entry)
+		p.onInsert(key, entry)
 		return
 	}
-	node := &LLnode{
+	node := &llNode{
 		key: key,
 	}
 	p.nodeMap[key] = node
@@ -360,7 +360,7 @@ func (p *LFUPolicy) OnInsertGeneric(key string, entry *Data) {
 	p.addToBucket(node, currentBucket, entry)
 }
 
-func (p *LFUPolicy) OnAccess(key string, entry *Data) {
+func (p *lfuPolicy) onAccess(key string, entry *data) {
 	node := p.nodeMap[key]
 	entry.LastAccess = time.Now()
 	prev := p.promoteRemove(entry, node)
@@ -368,7 +368,7 @@ func (p *LFUPolicy) OnAccess(key string, entry *Data) {
 	p.addToBucket(node, prev, entry)
 }
 
-func (p *LFUPolicy) OnDelete(key string, entry *Data) {
+func (p *lfuPolicy) onDelete(key string, entry *data) {
 	node, ok := p.nodeMap[key]
 	if !ok {
 		return
@@ -377,7 +377,7 @@ func (p *LFUPolicy) OnDelete(key string, entry *Data) {
 	delete(p.nodeMap, key)
 }
 
-func (p *LFUPolicy) SelectVictim() (key string) {
+func (p *lfuPolicy) selectVictim() (key string) {
 	key = p.removeFromBucketTail()
 	delete(p.nodeMap, key)
 	return
@@ -385,21 +385,21 @@ func (p *LFUPolicy) SelectVictim() (key string) {
 
 // TIME BASED REAP POLICIES
 // Last Access reap
-type LAReap struct {
-	head   *LLnode
-	tail   *LLnode
-	m      map[string]*LLnode
+type laReap struct {
+	head   *llNode
+	tail   *llNode
+	m      map[string]*llNode
 	maxAge time.Duration
 }
 
-func NewLAReap(maxAge time.Duration) *LAReap {
-	return &LAReap{
-		m:      make(map[string]*LLnode),
+func NewLAReap(maxAge time.Duration) *laReap {
+	return &laReap{
+		m:      make(map[string]*llNode),
 		maxAge: maxAge,
 	}
 }
 
-func (l *LAReap) onAccess(key string, entry *Data) {
+func (l *laReap) onAccess(key string, entry *data) {
 	entry.LastAccess = time.Now()
 	node := l.m[key]
 	if l.head == node {
@@ -420,13 +420,13 @@ func (l *LAReap) onAccess(key string, entry *Data) {
 	node.prev = nil
 }
 
-func (l *LAReap) onInsert(key string, entry *Data) {
+func (l *laReap) onInsert(key string, entry *data) {
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now()
 	}
 	entry.LastAccess = time.Now()
 
-	node := &LLnode{
+	node := &llNode{
 		key: key,
 	}
 	l.m[key] = node
@@ -441,7 +441,7 @@ func (l *LAReap) onInsert(key string, entry *Data) {
 	l.head = node
 }
 
-func (l *LAReap) onDelete(key string, entry *Data) {
+func (l *laReap) onDelete(key string, entry *data) {
 	node, ok := l.m[key]
 	if !ok {
 		return
@@ -459,7 +459,7 @@ func (l *LAReap) onDelete(key string, entry *Data) {
 	delete(l.m, key)
 }
 
-func (l *LAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
+func (l *laReap) Reap(interval time.Duration, cache *cache) chan struct{} {
 	stopChan := make(chan struct{})
 
 	go func() {
@@ -479,7 +479,7 @@ func (l *LAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
 	return stopChan
 }
 
-func (l *LAReap) Check(maxAge time.Duration, cache *Cache) {
+func (l *laReap) Check(maxAge time.Duration, cache *cache) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
@@ -492,7 +492,7 @@ func (l *LAReap) Check(maxAge time.Duration, cache *Cache) {
 		}
 
 		if time.Since(entry.LastAccess) > maxAge {
-			cache.DeleteNoLock(key)
+			cache.deleteNoLock(key)
 		} else {
 			break
 		}
@@ -500,30 +500,30 @@ func (l *LAReap) Check(maxAge time.Duration, cache *Cache) {
 }
 
 // Time Since Created reap
-type CAReap struct {
-	head   *LLnode
-	tail   *LLnode
-	m      map[string]*LLnode
+type caReap struct {
+	head   *llNode
+	tail   *llNode
+	m      map[string]*llNode
 	maxAge time.Duration
 }
 
-func NewCAReap(maxAge time.Duration) *CAReap {
-	return &CAReap{
-		m:      make(map[string]*LLnode),
+func NewCAReap(maxAge time.Duration) *caReap {
+	return &caReap{
+		m:      make(map[string]*llNode),
 		maxAge: maxAge,
 	}
 }
 
-func (c *CAReap) onAccess(key string, entry *Data) {
+func (c *caReap) onAccess(key string, entry *data) {
 	entry.LastAccess = time.Now()
 }
 
-func (c *CAReap) onInsert(key string, entry *Data) {
+func (c *caReap) onInsert(key string, entry *data) {
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now()
 	}
 	entry.LastAccess = time.Now()
-	node := &LLnode{
+	node := &llNode{
 		key: key,
 	}
 	c.m[key] = node
@@ -538,7 +538,7 @@ func (c *CAReap) onInsert(key string, entry *Data) {
 	c.head = node
 }
 
-func (c *CAReap) onDelete(key string, entry *Data) {
+func (c *caReap) onDelete(key string, entry *data) {
 	node, ok := c.m[key]
 	if !ok {
 		return
@@ -556,7 +556,7 @@ func (c *CAReap) onDelete(key string, entry *Data) {
 	delete(c.m, key)
 }
 
-func (c *CAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
+func (c *caReap) Reap(interval time.Duration, cache *cache) chan struct{} {
 	stopChan := make(chan struct{})
 
 	go func() {
@@ -568,7 +568,7 @@ func (c *CAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
 			case <-stopChan:
 				return
 			case <-ticker.C:
-				c.Check(c.maxAge, cache)
+				c.check(c.maxAge, cache)
 			}
 		}
 	}()
@@ -576,7 +576,7 @@ func (c *CAReap) Reap(interval time.Duration, cache *Cache) chan struct{} {
 	return stopChan
 }
 
-func (c *CAReap) Check(maxAge time.Duration, cache *Cache) {
+func (c *caReap) check(maxAge time.Duration, cache *cache) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
@@ -589,7 +589,7 @@ func (c *CAReap) Check(maxAge time.Duration, cache *Cache) {
 		}
 
 		if time.Since(entry.CreatedAt) > maxAge {
-			cache.DeleteNoLock(key)
+			cache.deleteNoLock(key)
 		} else {
 			break
 		}
@@ -597,7 +597,7 @@ func (c *CAReap) Check(maxAge time.Duration, cache *Cache) {
 }
 
 // Incubating New Cache ELements
-type TieredPolicy struct {
+type tieredPolicy struct {
 	Nursery       EvictionPolicy
 	NurseryReaper TimeReap
 	Mature        EvictionPolicy
@@ -605,10 +605,10 @@ type TieredPolicy struct {
 	pFreq         int
 	matureSize    int
 	maxMatureSize int
-	parentCache   *Cache
+	parentCache   *cache
 }
 
-func NewTieredPolicy(Nursery, Mature EvictionPolicy, Reaper TimeReap, reapInterval time.Duration, c *Cache) (*TieredPolicy, error) {
+func NewTieredPolicy(Nursery, Mature EvictionPolicy, Reaper TimeReap, reapInterval time.Duration, c *cache) (*tieredPolicy, error) {
 	if Nursery == nil || Mature == nil || c == nil {
 		return nil, fmt.Errorf("Nursery, Mature, and parent cache can not be nil")
 	}
@@ -616,7 +616,7 @@ func NewTieredPolicy(Nursery, Mature EvictionPolicy, Reaper TimeReap, reapInterv
 	if Reaper != nil && reapInterval == time.Duration(0) {
 		return nil, fmt.Errorf("Reaper must have a reap interval")
 	}
-	t := &TieredPolicy{
+	t := &tieredPolicy{
 		Nursery:       Nursery,
 		NurseryReaper: Reaper,
 		Mature:        Mature,
@@ -631,88 +631,88 @@ func NewTieredPolicy(Nursery, Mature EvictionPolicy, Reaper TimeReap, reapInterv
 	return t, nil
 }
 
-func (t *TieredPolicy) SetPromotionFreq(i int) {
+func (t *tieredPolicy) setPromotionFreq(i int) {
 	t.pFreq = i
 }
 
-func (t *TieredPolicy) SetSurvivalTime(d time.Duration) {
+func (t *tieredPolicy) setSurvivalTime(d time.Duration) {
 	t.sTime = d
 }
 
-func (t *TieredPolicy) SetMaxMatureSize(s int) {
+func (t *tieredPolicy) setMaxMatureSize(s int) {
 	t.maxMatureSize = s
 }
 
-func (t *TieredPolicy) OnAccess(key string, entry *Data) {
+func (t *tieredPolicy) onAccess(key string, entry *data) {
 	switch {
-	case t.Nursery.Contains(key):
-		t.Nursery.OnAccess(key, entry)
+	case t.Nursery.contains(key):
+		t.Nursery.onAccess(key, entry)
 		if t.NurseryReaper != nil {
 			t.NurseryReaper.onAccess(key, entry)
 		}
 		if entry.Count >= t.pFreq || time.Now().After(entry.CreatedAt.Add(t.sTime)) {
-			t.Promote(key, entry)
+			t.promote(key, entry)
 		}
-	case t.Mature.Contains(key):
-		t.Mature.OnAccess(key, entry)
+	case t.Mature.contains(key):
+		t.Mature.onAccess(key, entry)
 	default:
 	}
 
 }
 
-func (t *TieredPolicy) OnInsert(key string, entry *Data) {
-	t.Nursery.OnInsert(key, entry)
+func (t *tieredPolicy) onInsert(key string, entry *data) {
+	t.Nursery.onInsert(key, entry)
 	if t.NurseryReaper != nil {
 		t.NurseryReaper.onInsert(key, entry)
 	}
 }
 
-func (t *TieredPolicy) OnDelete(key string, entry *Data) {
+func (t *tieredPolicy) onDelete(key string, entry *data) {
 	switch {
-	case t.Nursery.Contains(key):
-		t.Nursery.OnDelete(key, entry)
+	case t.Nursery.contains(key):
+		t.Nursery.onDelete(key, entry)
 		if t.NurseryReaper != nil {
 			t.NurseryReaper.onDelete(key, entry)
 		}
-	case t.Mature.Contains(key):
-		t.Mature.OnDelete(key, entry)
-		t.matureSize -= entry.SizeOf()
+	case t.Mature.contains(key):
+		t.Mature.onDelete(key, entry)
+		t.matureSize -= entry.sizeOf()
 	default:
 		return
 	}
 }
 
-func (t *TieredPolicy) Contains(key string) bool {
-	if t.Nursery.Contains(key) || t.Mature.Contains(key) {
+func (t *tieredPolicy) contains(key string) bool {
+	if t.Nursery.contains(key) || t.Mature.contains(key) {
 		return true
 	}
 	return false
 }
 
-func (t *TieredPolicy) SelectVictim() string {
-	if t.Nursery.SelectVictim() != "" {
-		return t.Nursery.SelectVictim()
+func (t *tieredPolicy) selectVictim() string {
+	if t.Nursery.selectVictim() != "" {
+		return t.Nursery.selectVictim()
 	} else {
-		return t.Mature.SelectVictim()
+		return t.Mature.selectVictim()
 	}
 }
 
-func (t *TieredPolicy) Promote(key string, entry *Data) {
-	if !t.Nursery.Contains(key) {
+func (t *tieredPolicy) promote(key string, entry *data) {
+	if !t.Nursery.contains(key) {
 		return
 	}
-	if ok := t.Sizing(entry, t.parentCache); ok {
-		t.Nursery.OnDelete(key, entry) //soft delete designed explicitly for this - we don't want to delete and reinsert into cache map
-		t.Mature.OnInsert(key, entry)
+	if ok := t.sizing(entry, t.parentCache); ok {
+		t.Nursery.onDelete(key, entry) //soft delete designed explicitly for this - we don't want to delete and reinsert into cache map
+		t.Mature.onInsert(key, entry)
 		if t.NurseryReaper != nil {
 			t.NurseryReaper.onDelete(key, entry)
 		}
 	}
 }
 
-func (t *TieredPolicy) Sizing(d *Data, c *Cache) (add bool) {
+func (t *tieredPolicy) sizing(d *data, c *cache) (add bool) {
 	add = true
-	size := d.SizeOf()
+	size := d.sizeOf()
 	if size < 0 {
 		t.matureSize += size
 		return
@@ -722,9 +722,9 @@ func (t *TieredPolicy) Sizing(d *Data, c *Cache) (add bool) {
 		return
 	}
 	for size+t.matureSize >= t.maxMatureSize {
-		key := t.Mature.SelectVictim()
+		key := t.Mature.selectVictim()
 		if _, ok := c.data[key]; ok {
-			c.DeleteNoLock(key)
+			c.deleteNoLock(key)
 		}
 	}
 	t.matureSize += size

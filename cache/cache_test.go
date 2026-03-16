@@ -13,7 +13,7 @@ import (
 func TestSimpleStorage(t *testing.T) {
 	s := NewCache()
 	key := "testing"
-	value := &Data{
+	value := &data{
 		Perm: false,
 		Data: []byte("This is a test"),
 	}
@@ -35,7 +35,7 @@ func TestSimpleStorage(t *testing.T) {
 func TestPermNonPerm(t *testing.T) {
 	s := NewCache()
 	key := "perm"
-	value := &Data{
+	value := &data{
 		Perm: true,
 		Data: []byte("This is permanent"),
 	}
@@ -70,12 +70,12 @@ func TestPermNonPerm(t *testing.T) {
 func TestDeleteBasic(t *testing.T) {
 	s := NewCache()
 	key1 := "non-perm"
-	value1 := &Data{
+	value1 := &data{
 		Perm: false,
 		Data: []byte("This is not permanent"),
 	}
 	key2 := "perm"
-	value2 := &Data{
+	value2 := &data{
 		Perm: true,
 		Data: []byte("This is permanent"),
 	}
@@ -105,20 +105,20 @@ func TestDeleteBasic(t *testing.T) {
 // TEST LRU POLICY - FORCE EVICTIONS
 func TestLRUBasic(t *testing.T) {
 	s := NewCache()
-	s.policy = NewLRUPolicy()
+	s.policy = newLRUPolicy()
 
 	key1 := "1"
-	value1 := &Data{
+	value1 := &data{
 		Perm: false,
 		Data: []byte("This is non-perm"),
 	}
 	key2 := "2"
-	value2 := &Data{
+	value2 := &data{
 		Perm: true,
 		Data: []byte("This is perm"),
 	}
 	key3 := "3"
-	value3 := &Data{
+	value3 := &data{
 		Perm: false,
 		Data: []byte("non-perm again"),
 	}
@@ -139,7 +139,7 @@ func TestLRUBasic(t *testing.T) {
 	require.Equal(t, value3.Data, v3, "Retrieved value should be equal")
 
 	//key 1 should be the last in line - lets force evict:
-	k := s.policy.SelectVictim()
+	k := s.policy.selectVictim()
 	s.Delete(k)
 	_, exists1 = s.Get(key1)
 	require.False(t, exists1, "This key should have been reaped")
@@ -149,7 +149,7 @@ func TestLRUBasic(t *testing.T) {
 	require.True(t, exists3, "Key should still be in the data")
 
 	//Now 3 was most recently accessed but 2 is permmed, so if we reap again only 2 should be left
-	k = s.policy.SelectVictim()
+	k = s.policy.selectVictim()
 	s.Delete(k)
 	fmt.Println(k)
 	_, exists2 = s.Get(key2)
@@ -160,19 +160,19 @@ func TestLRUBasic(t *testing.T) {
 
 func TestLRUUpdate(t *testing.T) {
 	s := NewCache()
-	s.policy = NewLRUPolicy()
+	s.policy = newLRUPolicy()
 
 	key1 := "1"
 	key2 := "2"
-	value1 := &Data{
+	value1 := &data{
 		Perm: false,
 		Data: []byte("Hello World"),
 	}
-	value2 := &Data{
+	value2 := &data{
 		Perm: false,
 		Data: []byte("I'm here for a good time, not a long time"),
 	}
-	value3 := &Data{
+	value3 := &data{
 		Perm: false,
 		Data: []byte("A whole new world"),
 	}
@@ -188,7 +188,7 @@ func TestLRUUpdate(t *testing.T) {
 
 	s.Set(key1, value3)
 	//Reap here after set before a get
-	k := s.policy.SelectVictim()
+	k := s.policy.selectVictim()
 	s.Delete(k)
 
 	v1, exists1 = s.Get(key1)
@@ -201,20 +201,20 @@ func TestLRUUpdate(t *testing.T) {
 
 func TestLRUPerm(t *testing.T) {
 	s := NewCache()
-	s.policy = NewLRUPolicy()
+	s.policy = newLRUPolicy()
 
 	//Calling get and delete on keys that don't exist, also selecting victim from an empty policy
 	s.Get("1")
 	s.Delete("1")
-	key := s.policy.SelectVictim()
+	key := s.policy.selectVictim()
 	require.Equal(t, key, "", "Victim should be the empty string")
 
 	key1 := "1"
-	value1 := &Data{
+	value1 := &data{
 		Data: []byte("Hi mom, I am coding"),
 	}
 	key2 := "2"
-	value2 := &Data{
+	value2 := &data{
 		Data: []byte("Are you proud of me dad?"),
 	}
 
@@ -222,7 +222,7 @@ func TestLRUPerm(t *testing.T) {
 	s.Set(key2, value2)
 
 	s.MakePerm(key1)
-	k := s.policy.SelectVictim()
+	k := s.policy.selectVictim()
 	s.Delete(k)
 	v1, exists1 := s.Get(key1)
 	_, exists2 := s.Get(key2)
@@ -240,7 +240,7 @@ func TestLRUWithSize(t *testing.T) {
 	//given this, we should be able to hold 2 10 byte objects, but should not be able to hold the 1000 byte data
 
 	s := NewCache()
-	s.policy = NewLRUPolicy()
+	s.policy = newLRUPolicy()
 	s.maxSize = size
 
 	//Generate 10 byte data of a's
@@ -255,10 +255,10 @@ func TestLRUWithSize(t *testing.T) {
 	}
 
 	key1 := "1"
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
-	value2 := &Data{
+	value2 := &data{
 		Data: BIGBYTE,
 	}
 	key2 := "2"
@@ -320,22 +320,22 @@ func TestLFUWithSize(t *testing.T) {
 	key5 := "5"
 	key6 := "6"
 
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
-	value2 := &Data{
+	value2 := &data{
 		Data: tenByte,
 	}
-	value3 := &Data{
+	value3 := &data{
 		Data: tenByte,
 	}
-	value4 := &Data{
+	value4 := &data{
 		Data: tenByte,
 	}
-	value5 := &Data{
+	value5 := &data{
 		Data: tenByte,
 	}
-	value6 := &Data{
+	value6 := &data{
 		Data: BIGBYTE,
 	}
 
@@ -393,25 +393,25 @@ func TestCAReaper(t *testing.T) {
 	}
 
 	key1 := "1"
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
 
 	key2 := "2"
-	value2 := &Data{
+	value2 := &data{
 		Data: BIGBYTE,
 	}
 
-	value3 := &Data{
+	value3 := &data{
 		Data: tenByte,
 	}
 
-	value4 := &Data{
+	value4 := &data{
 		Data: tenByte,
 	}
 
 	key3 := "3"
-	value5 := &Data{
+	value5 := &data{
 		Data: tenByte,
 	}
 
@@ -471,15 +471,15 @@ func TestLAReaper(t *testing.T) {
 	key2 := "2"
 	key3 := "3"
 
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
 
-	value2 := &Data{
+	value2 := &data{
 		Data: tenByte,
 	}
 
-	value3 := &Data{
+	value3 := &data{
 		Data: tenByte,
 	}
 
@@ -528,13 +528,13 @@ func TestLAandCAReapers(t *testing.T) {
 	key2 := "2"
 	key3 := "3"
 
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
-	value2 := &Data{
+	value2 := &data{
 		Data: tenByte,
 	}
-	value3 := &Data{
+	value3 := &data{
 		Data: tenByte,
 	}
 
@@ -579,10 +579,10 @@ func TestLAandCAReapers(t *testing.T) {
 
 func TestBasicTiered(t *testing.T) {
 	s := NewCache()
-	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
+	n, err := NewTieredPolicy(newLRUPolicy(), newLRUPolicy(), nil, time.Duration(0), s)
 	assert.NoError(t, err, "Policy should have initialized")
-	n.SetMaxMatureSize(200)
-	n.SetPromotionFreq(4)
+	n.setMaxMatureSize(200)
+	n.setPromotionFreq(4)
 	s.SetSize(300)
 	s.policy = n
 
@@ -596,16 +596,16 @@ func TestBasicTiered(t *testing.T) {
 	key3 := "3"
 	key4 := "4"
 
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
-	value2 := &Data{
+	value2 := &data{
 		Data: tenByte,
 	}
-	value3 := &Data{
+	value3 := &data{
 		Data: tenByte,
 	}
-	value4 := &Data{
+	value4 := &data{
 		Data: tenByte,
 	}
 
@@ -636,7 +636,7 @@ func TestBasicTiered(t *testing.T) {
 
 func TestErrorCreatingCache(t *testing.T) {
 	s := NewCache()
-	n := NewLRUPolicy()
+	n := newLRUPolicy()
 	m := NewLFUPolicy()
 	maxAge := time.Duration(10 * time.Second)
 	_, err1 := NewTieredPolicy(nil, n, nil, time.Duration(0), s)
@@ -657,10 +657,10 @@ func TestErrorCreatingCache(t *testing.T) {
 
 func TestObjectTooBigForMature(t *testing.T) {
 	s := NewCache()
-	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
+	n, err := NewTieredPolicy(newLRUPolicy(), newLRUPolicy(), nil, time.Duration(0), s)
 	assert.NoError(t, err, "Policy should have initialized")
-	n.SetMaxMatureSize(200)
-	n.SetPromotionFreq(3)
+	n.setMaxMatureSize(200)
+	n.setPromotionFreq(3)
 	s.SetSize(1100)
 	s.policy = n
 
@@ -678,13 +678,13 @@ func TestObjectTooBigForMature(t *testing.T) {
 	key2 := "2"
 	key3 := "3"
 
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
-	value2 := &Data{
+	value2 := &data{
 		Data: thousandByte,
 	}
-	value3 := &Data{
+	value3 := &data{
 		Data: tenByte,
 	}
 
@@ -710,12 +710,12 @@ func TestObjectTooBigForMature(t *testing.T) {
 
 func TestMatureEvictionsForSize(t *testing.T) {
 	s := NewCache()
-	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
+	n, err := NewTieredPolicy(newLRUPolicy(), newLRUPolicy(), nil, time.Duration(0), s)
 	s.policy = n
 	require.NoError(t, err)
-	n.SetMaxMatureSize(200)
+	n.setMaxMatureSize(200)
 	s.SetSize(400)
-	n.SetPromotionFreq(3)
+	n.setPromotionFreq(3)
 
 	tenByte := []byte{}
 	for i := 1; i <= 10; i++ {
@@ -727,16 +727,16 @@ func TestMatureEvictionsForSize(t *testing.T) {
 	key3 := "3"
 	key4 := "4"
 
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
-	value2 := &Data{
+	value2 := &data{
 		Data: tenByte,
 	}
-	value3 := &Data{
+	value3 := &data{
 		Data: tenByte,
 	}
-	value4 := &Data{
+	value4 := &data{
 		Data: tenByte,
 	}
 
@@ -770,10 +770,10 @@ func TestMatureEvictionsForSize(t *testing.T) {
 
 func TestTieredWithTimed(t *testing.T) {
 	s := NewCache()
-	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), NewLAReap(time.Duration(1*time.Second)), time.Duration(100*time.Millisecond), s)
+	n, err := NewTieredPolicy(newLRUPolicy(), newLRUPolicy(), NewLAReap(time.Duration(1*time.Second)), time.Duration(100*time.Millisecond), s)
 	assert.NoError(t, err)
-	n.SetPromotionFreq(3)
-	n.SetMaxMatureSize(200)
+	n.setPromotionFreq(3)
+	n.setMaxMatureSize(200)
 	s.policy = n
 	s.SetSize(400)
 
@@ -787,16 +787,16 @@ func TestTieredWithTimed(t *testing.T) {
 	key3 := "3"
 	key4 := "4"
 
-	value1 := &Data{
+	value1 := &data{
 		Data: tenByte,
 	}
-	value2 := &Data{
+	value2 := &data{
 		Data: tenByte,
 	}
-	value3 := &Data{
+	value3 := &data{
 		Data: tenByte,
 	}
-	value4 := &Data{
+	value4 := &data{
 		Data: tenByte,
 	}
 
@@ -817,10 +817,10 @@ func TestTieredWithTimed(t *testing.T) {
 	require.False(t, ok2, "This value should not have been reaped")
 	_, ok1 := s.Get(key1)
 	require.True(t, ok1, "This value should not be reaped out of the mature cache")
-	s.Set(key2, &Data{
+	s.Set(key2, &data{
 		Data: tenByte,
 	})
-	s.Set("5", &Data{
+	s.Set("5", &data{
 		Data: tenByte,
 	}) //This should trigger a size based reap of key3
 
