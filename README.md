@@ -1,4 +1,5 @@
 # CacheMasters
+## Motivation
 
 Designed partially as an exploration of using garbage collection/lifecycle management methods in caching,
 CacheMasters lets users create caches with a simple command, then specify the architecture they want
@@ -31,7 +32,7 @@ go get github.com/CoupDeGrace92/CacheMaster
 ```
 
 
-## Quick Start Code Example
+## Quick Start
 
 ```go
 package main
@@ -93,8 +94,8 @@ func main(){
 }
 ```
 
-# Configuration Options
-## Cache Configuration
+## Usage
+### Cache Configuration
 
 | Method | Parameter | Type | Default | Description |
 |---|---|---|---|---|
@@ -104,7 +105,7 @@ func main(){
 | `SetEvictionPolicy(m)` | `m` | `EvictionPolicy` | `nil` | Sets eviction policy. Returns error if policy already exists |
 | `AddManagedReaper(m)` | `m` | `TimeReap` | - | Adds a time-based reaper goroutine to the cache |
 
-## Tiered Policy Configuration
+### Tiered Policy Configuration
 This policy is based on promoting entries that survive the initial stage of their life to a longer lived portion of
 the cache.  Note that promotion frequency and survival time are disjunctive and there is no current support for 
 conjunctive promotion criteria.  However, since CacheMaster exposes the eviction policy interface, users that need
@@ -119,16 +120,16 @@ a conjunctive promotion selection can create their own.
 | `SetSurvivalTime(d)` | `d` | `time.Duration` | `1000000h` | Age required for nursery promotion |
 | `SetMaxMatureSize(s)` | `s` | `int` | `math.MaxInt` | Maximum size of the mature tier in bytes |
 
-## Time-Based Reaper Configuration
+### Time-Based Reaper Configuration
 
-### Last-Access Reaper (LAReap)
+#### Last-Access Reaper (LAReap)
 Evicts entries that have not been accessed within a specified duration.
 
 | Constructor | Parameter | Type | Description |
 |---|---|---|---|
 | `NewLAReap(maxAge)` | `maxAge` | `time.Duration` | Maximum time since last access before an entry is reaped |
 
-### Created-At Reaper (CAReap)
+#### Created-At Reaper (CAReap)
 Evicts entries that have existed in the cache longer than a specified duration, regardless of access patterns.
 
 | Constructor | Parameter | Type | Description |
@@ -136,7 +137,7 @@ Evicts entries that have existed in the cache longer than a specified duration, 
 | `NewCAReap(maxAge)` | `maxAge` | `time.Duration` | Maximum time since creation before an entry is reaped |
 
 
-## Cache Operations
+### Cache Operations
 
 | Method | Parameters | Returns | Description |
 |---|---|---|---|
@@ -149,8 +150,8 @@ Evicts entries that have existed in the cache longer than a specified duration, 
 | `GetCurrentSize()` | - | `int` | Returns the current total size of all entries in bytes |
 | `GetCurrentPermSize()` | - | `int` | Returns the current size of permanent entries in bytes |
 
-## Discussions of EvictionPolicy and TimeReap
-### EvictionPolicy
+### Discussions of EvictionPolicy and TimeReap
+#### EvictionPolicy
 The EvictionPolicy interface defines how the cache selects entries for removal when the cache reaches maximum size:
 
 ```go
@@ -189,7 +190,7 @@ a custom interface is demonstrated below with RandomPolicy.  Methods with no rel
 (see onAccess for RandomPolicy illustrated below - on access does not care about data state so onAccess does not update
 any states relevant to the data in question).
 
-### TimeReap
+#### TimeReap
 The TimeReap interface defines a goroutine-based cleanup loop that periodically removes entries based on time-based criteria:
 ```go
 type TimeReap interface{
@@ -208,7 +209,7 @@ The Reap method is responsible for starting the cleanup goroutine and returning 
 terminate the goroutine if desired.
 
 
-## Example of the EvictionPolicy interface
+### Example of the EvictionPolicy interface
 For a simple example - we will construct an eviction policy that evicts a random entry when called.  Utilizing
 the fact that map access is pseudorandom:
 
@@ -250,7 +251,7 @@ For custom policies that need some sort of metadata not contained within the Dat
 recommendations BUT as always, you are in control and any solution that you land on that fits your usecase
 works.  CacheMaster suggests using either an external metadata map OR a wrapper struct used as the byte slice:
 
-### External metadata map
+#### External metadata map
 ```go
 type MyMetadata struct {
     //Metadata fields here - e.g. tag
@@ -261,7 +262,7 @@ type MyMetadata struct {
 metaMap := make(map[string]*MyMetadata)
 ```
 
-### Wrapper struct used as a byte slice
+#### Wrapper struct used as a byte slice
 ```go
 type DataPlus struct {
     //Metadata fields here - e.g. tag
@@ -275,7 +276,7 @@ Using an external metadata map is suggested for general use cases but a wrapper 
 all data in one place (it will exist on the data structure within the caches internal map instead of on an
 additional map)
 
-## The Data Structure
+### The Data Structure
 
 Custom `EvictionPolicy` and `TimeReap` implementations have access to the following fields on the `Data` struct:
 
@@ -288,3 +289,35 @@ Custom `EvictionPolicy` and `TimeReap` implementations have access to the follow
 Note that `Count` is incremented on both insertion and access. A freshly inserted entry will have a `Count` of `1`.
 
 Direct modification of these fields is supported within custom policy implementations but modifying them outside of a policy context may result in unexpected eviction behavior. The underlying data and permanence of an entry are managed exclusively through `Set`, `Get`, `Delete`, `MakePerm`, and `MakeNonPerm`.
+
+## Contributing
+
+To contribute - first clone the repo:
+```bash
+git clone https://github.com/CoupDeGrace92/CacheMaster
+```
+
+Any feature changes you are interested in implementing should be checked out into an appropriate git branch.
+
+```bash
+git checkout -b <branch-name-for-change>
+```
+
+Then once you have made changes, add any tests to a testify file that are consistent with the changes (that illustrate
+the bug that currently exists OR show off the intended behavior of the desired feature as well as tests on edge cases)
+
+The command for testing the repo:
+```bash
+go test ./...
+```
+
+Also make sure the binary compiles:
+```bash
+go build
+```
+
+If you are satisfied, feel free to submit the request.
+
+```bash
+git pull origin main https://github.com/CoupDeGrace92/CacheMaster
+```
