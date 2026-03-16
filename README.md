@@ -1,6 +1,4 @@
 # CacheMasters
-## Motivation
-
 Designed partially as an exploration of using garbage collection/lifecycle management methods in caching,
 CacheMasters lets users create caches with a simple command, then specify the architecture they want
 without having to implement the inner workings themselves.
