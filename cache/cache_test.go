@@ -13,16 +13,16 @@ import (
 func TestSimpleStorage(t *testing.T) {
 	s := NewCache()
 	key := "testing"
-	value := &data{
-		Perm: false,
-		Data: []byte("This is a test"),
+	value := &Data{
+		perm: false,
+		data: []byte("This is a test"),
 	}
 
-	s.Set(key, value)
+	s.Set(key, []byte("This is a test"))
 	v, exists := s.Get(key)
 
 	require.True(t, exists, "Key should exist in storage")
-	require.Equal(t, value.Data, v, "Retrieved value should be the same as the outputted value")
+	require.Equal(t, value.data, v, "Retrieved value should be the same as the outputted value")
 
 	s.Delete(key)
 	v, exists = s.Get(key)
@@ -35,61 +35,61 @@ func TestSimpleStorage(t *testing.T) {
 func TestPermNonPerm(t *testing.T) {
 	s := NewCache()
 	key := "perm"
-	value := &data{
-		Perm: true,
-		Data: []byte("This is permanent"),
+	value := &Data{
+		perm: true,
+		data: []byte("This is permanent"),
 	}
 
-	s.Set(key, value)
+	s.Set(key, []byte("This is permanent"))
 	v, exists := s.Get(key)
 
 	require.True(t, exists, "Key should exist even in perm storage")
-	require.Equal(t, value.Data, v, "Retrieved value should be the same as the outputted value")
+	require.Equal(t, value.data, v, "Retrieved value should be the same as the outputted value")
 
 	s.MakeNonPerm("perm")
 
 	v, exists = s.Get(key)
 
 	require.True(t, exists, "Key should exist even in non-perm storage")
-	require.Equal(t, value.Data, v, "Retrieved value should be the same as the outputted value")
+	require.Equal(t, value.data, v, "Retrieved value should be the same as the outputted value")
 
 	s.MakePerm("perm")
 
 	v, exists = s.Get(key)
 
 	require.True(t, exists, "Key should exist even in perm storage, after moving")
-	require.Equal(t, value.Data, v, "Retrieved value should be the same as the outputted value")
+	require.Equal(t, value.data, v, "Retrieved value should be the same as the outputted value")
 
 	s.MakePerm("perm")
 
 	v, exists = s.Get(key)
 	require.True(t, exists, "Key should exist even after permming 2 times in a row")
-	require.Equal(t, value.Data, v, "Retrieved value should be the same as the outputted value")
+	require.Equal(t, value.data, v, "Retrieved value should be the same as the outputted value")
 }
 
 func TestDeleteBasic(t *testing.T) {
 	s := NewCache()
 	key1 := "non-perm"
-	value1 := &data{
-		Perm: false,
-		Data: []byte("This is not permanent"),
+	value1 := &Data{
+		perm: false,
+		data: []byte("This is not permanent"),
 	}
 	key2 := "perm"
-	value2 := &data{
-		Perm: true,
-		Data: []byte("This is permanent"),
+	value2 := &Data{
+		perm: true,
+		data: []byte("This is permanent"),
 	}
 
-	s.Set(key1, value1)
-	s.Set(key2, value2)
+	s.Set(key1, []byte("This is not permanent"))
+	s.Set(key2, []byte("This is permanent"))
 
 	v1, exists1 := s.Get(key1)
 	require.True(t, exists1, "Key should exist for non-perm")
-	require.Equal(t, value1.Data, v1, "Retrieved value should be the same as the outputted value")
+	require.Equal(t, value1.data, v1, "Retrieved value should be the same as the outputted value")
 
 	v2, exists2 := s.Get(key2)
 	require.True(t, exists2, "Key should exist for perm data")
-	require.Equal(t, value2.Data, v2, "Retrieved value should be equal")
+	require.Equal(t, value2.data, v2, "Retrieved value should be equal")
 
 	s.Delete(key1)
 	s.Delete(key2)
@@ -105,38 +105,38 @@ func TestDeleteBasic(t *testing.T) {
 // TEST LRU POLICY - FORCE EVICTIONS
 func TestLRUBasic(t *testing.T) {
 	s := NewCache()
-	s.policy = newLRUPolicy()
+	s.policy = NewLRUPolicy()
 
 	key1 := "1"
-	value1 := &data{
-		Perm: false,
-		Data: []byte("This is non-perm"),
+	value1 := &Data{
+		perm: false,
+		data: []byte("This is non-perm"),
 	}
 	key2 := "2"
-	value2 := &data{
-		Perm: true,
-		Data: []byte("This is perm"),
+	value2 := &Data{
+		perm: true,
+		data: []byte("This is perm"),
 	}
 	key3 := "3"
-	value3 := &data{
-		Perm: false,
-		Data: []byte("non-perm again"),
+	value3 := &Data{
+		perm: false,
+		data: []byte("non-perm again"),
 	}
-	s.Set(key1, value1)
-	s.Set(key2, value2)
-	s.Set(key3, value3)
+	s.Set(key1, []byte("This is non-perm"))
+	s.Set(key2, []byte("This is perm"))
+	s.Set(key3, []byte("non-perm again"))
 
 	v1, exists1 := s.Get(key1)
 	require.True(t, exists1, "Key should exist in data")
-	require.Equal(t, value1.Data, v1, "Retrieved value should be equal")
+	require.Equal(t, value1.data, v1, "Retrieved value should be equal")
 
 	v2, exists2 := s.Get(key2)
 	require.True(t, exists2, "Key should exist in data")
-	require.Equal(t, value2.Data, v2, "Retrieved value should be equal")
+	require.Equal(t, value2.data, v2, "Retrieved value should be equal")
 
 	v3, exists3 := s.Get(key3)
 	require.True(t, exists3, "Key should exist in data")
-	require.Equal(t, value3.Data, v3, "Retrieved value should be equal")
+	require.Equal(t, value3.data, v3, "Retrieved value should be equal")
 
 	//key 1 should be the last in line - lets force evict:
 	k := s.policy.selectVictim()
@@ -160,33 +160,33 @@ func TestLRUBasic(t *testing.T) {
 
 func TestLRUUpdate(t *testing.T) {
 	s := NewCache()
-	s.policy = newLRUPolicy()
+	s.policy = NewLRUPolicy()
 
 	key1 := "1"
 	key2 := "2"
-	value1 := &data{
-		Perm: false,
-		Data: []byte("Hello World"),
+	value1 := &Data{
+		perm: false,
+		data: []byte("Hello World"),
 	}
-	value2 := &data{
-		Perm: false,
-		Data: []byte("I'm here for a good time, not a long time"),
+	value2 := &Data{
+		perm: false,
+		data: []byte("I'm here for a good time, not a long time"),
 	}
-	value3 := &data{
-		Perm: false,
-		Data: []byte("A whole new world"),
+	value3 := &Data{
+		perm: false,
+		data: []byte("A whole new world"),
 	}
 
-	s.Set(key1, value1)
-	s.Set(key2, value2)
+	s.Set(key1, []byte("Hello World"))
+	s.Set(key2, []byte("I'm here for a good time, not a long time"))
 	v1, exists1 := s.Get(key1)
 	require.True(t, exists1, "Value must be in cache")
-	require.Equal(t, value1.Data, v1, "value must be what we put there")
+	require.Equal(t, value1.data, v1, "value must be what we put there")
 	v2, exists2 := s.Get(key2)
 	require.True(t, exists2, "Value 2 must be in data")
-	require.Equal(t, value2.Data, v2, "value must be what we put there")
+	require.Equal(t, value2.data, v2, "value must be what we put there")
 
-	s.Set(key1, value3)
+	s.Set(key1, []byte("A whole new world"))
 	//Reap here after set before a get
 	k := s.policy.selectVictim()
 	s.Delete(k)
@@ -195,13 +195,13 @@ func TestLRUUpdate(t *testing.T) {
 	_, exists2 = s.Get(key2)
 	require.True(t, exists1, "Key one should not be reaped")
 	require.False(t, exists2, "Key two should be reaped")
-	require.Equal(t, v1, value3.Data, "Key one should contain updated data")
+	require.Equal(t, v1, value3.data, "Key one should contain updated data")
 	t.Logf("key1's freq: %v\n", s.data[key1].Count)
 }
 
 func TestLRUPerm(t *testing.T) {
 	s := NewCache()
-	s.policy = newLRUPolicy()
+	s.policy = NewLRUPolicy()
 
 	//Calling get and delete on keys that don't exist, also selecting victim from an empty policy
 	s.Get("1")
@@ -210,16 +210,13 @@ func TestLRUPerm(t *testing.T) {
 	require.Equal(t, key, "", "Victim should be the empty string")
 
 	key1 := "1"
-	value1 := &data{
-		Data: []byte("Hi mom, I am coding"),
+	value1 := &Data{
+		data: []byte("Hi mom, I am coding"),
 	}
 	key2 := "2"
-	value2 := &data{
-		Data: []byte("Are you proud of me dad?"),
-	}
 
-	s.Set(key1, value1)
-	s.Set(key2, value2)
+	s.Set(key1, []byte("Hi mom, I am coding"))
+	s.Set(key2, []byte("Are you proud of me dad?"))
 
 	s.MakePerm(key1)
 	k := s.policy.selectVictim()
@@ -227,7 +224,7 @@ func TestLRUPerm(t *testing.T) {
 	v1, exists1 := s.Get(key1)
 	_, exists2 := s.Get(key2)
 	require.True(t, exists1, "This key was permmed so should not have been removed")
-	require.Equal(t, v1, value1.Data, "Data is what we inserted")
+	require.Equal(t, v1, value1.data, "Data is what we inserted")
 	require.False(t, exists2, "While this was moved to the head, this is the only non-permmed data")
 }
 
@@ -240,7 +237,7 @@ func TestLRUWithSize(t *testing.T) {
 	//given this, we should be able to hold 2 10 byte objects, but should not be able to hold the 1000 byte data
 
 	s := NewCache()
-	s.policy = newLRUPolicy()
+	s.policy = NewLRUPolicy()
 	s.maxSize = size
 
 	//Generate 10 byte data of a's
@@ -255,18 +252,12 @@ func TestLRUWithSize(t *testing.T) {
 	}
 
 	key1 := "1"
-	value1 := &data{
-		Data: tenByte,
-	}
-	value2 := &data{
-		Data: BIGBYTE,
-	}
 	key2 := "2"
 	key3 := "3"
 	key4 := "4"
 
-	s.Set(key1, value1)
-	s.Set(key2, value1)
+	s.Set(key1, tenByte)
+	s.Set(key2, BIGBYTE)
 
 	v1, exists1 := s.Get(key1)
 	require.True(t, exists1, "Item 1 should not have been evicted when we set the value")
@@ -276,21 +267,21 @@ func TestLRUWithSize(t *testing.T) {
 	require.Equal(t, v2, tenByte, "Should be tenByte")
 
 	//now try some eviction:
-	s.Set(key3, value1)
+	s.Set(key3, tenByte)
 	_, exists3 := s.Get(key3)
 	_, exists1 = s.Get(key1)
 	require.True(t, exists3, "exists3 should be in the cache")
 	require.False(t, exists1, "This should have been the last eviction")
 
 	//Attempt to add an object that is too large to the cache
-	s.Set(key4, value2)
+	s.Set(key4, BIGBYTE)
 	_, exists4 := s.Get(key4)
 	require.False(t, exists4, "This item is too big to fit into the cache")
 
 	//Make key 3 perm
 	s.MakePerm(key3)
 	s.Get(key2)
-	s.Set(key1, value1) //this should cause an eviction of key2 even though it was more recently grabbed
+	s.Set(key1, tenByte) //this should cause an eviction of key2 even though it was more recently grabbed
 	_, exists2 = s.Get(key2)
 	require.False(t, exists2, "Should be evicted because the other option is permmed")
 	t.Logf("Key3's freq: %v\n", s.perm[key3].Count)
@@ -320,54 +311,45 @@ func TestLFUWithSize(t *testing.T) {
 	key5 := "5"
 	key6 := "6"
 
-	value1 := &data{
-		Data: tenByte,
+	value1 := &Data{
+		data: tenByte,
 	}
-	value2 := &data{
-		Data: tenByte,
+	value3 := &Data{
+		data: tenByte,
 	}
-	value3 := &data{
-		Data: tenByte,
-	}
-	value4 := &data{
-		Data: tenByte,
-	}
-	value5 := &data{
-		Data: tenByte,
-	}
-	value6 := &data{
-		Data: BIGBYTE,
+	value4 := &Data{
+		data: tenByte,
 	}
 
-	s.Set(key1, value1)
+	s.Set(key1, tenByte)
 	v1, exists1 := s.Get(key1)
 	require.True(t, exists1, "Value should be in cache")
-	require.Equal(t, v1, value1.Data, "Data should be equal to inserted data")
+	require.Equal(t, v1, value1.data, "Data should be equal to inserted data")
 
-	s.Set(key2, value2)
-	s.Set(key3, value3)
+	s.Set(key2, tenByte)
+	s.Set(key3, tenByte)
 	_, exists2 := s.Get(key2)
 	v3, exists3 := s.Get(key3)
 	require.False(t, exists2, "key2 should have been reaped from bucket 1")
 	require.True(t, exists3, "Key 3 should now be present in bucket 2")
-	require.Equal(t, v3, value3.Data, "Key 3's data should be correct")
+	require.Equal(t, v3, value3.data, "Key 3's data should be correct")
 	require.Equal(t, value3.Count, 2, "Should be in bucket2 - one for creation one for get")
 
 	s.AddSize(100)
-	s.Set(key4, value4)
+	s.Set(key4, tenByte)
 	s.Get(key4)
 	v4, exists4 := s.Get(key4)
 	require.True(t, exists4, "Key 4 should exist and be present in bucket 3")
-	require.Equal(t, v4, value4.Data)
+	require.Equal(t, v4, value4.data)
 	require.Equal(t, value4.Count, 3, "key 4 should be in bucket 3")
 
 	t.Logf("key4's freq: %v\n", s.data[key4].Count)
 	//Now if we eject a value, it should be key1 from bucket 2
-	s.Set(key5, value5)
+	s.Set(key5, tenByte)
 	_, exists1 = s.Get(key1)
 	require.False(t, exists1, "This value should have been ejected from bucket 2")
 
-	s.Set(key6, value6)
+	s.Set(key6, BIGBYTE)
 	_, exists6 := s.Get(key6)
 	require.False(t, exists6, "This value is to big to include in the cache")
 
@@ -378,7 +360,7 @@ func TestCAReaper(t *testing.T) {
 	s.AddManagedReaper(NewCAReap(3 * time.Second))
 	s.SetSize(500)
 
-	for _, reaper := range s.Reapers {
+	for _, reaper := range s.reapers {
 		reaper.Start(1*time.Second, s)
 	}
 
@@ -393,51 +375,36 @@ func TestCAReaper(t *testing.T) {
 	}
 
 	key1 := "1"
-	value1 := &data{
-		Data: tenByte,
+	value1 := &Data{
+		data: tenByte,
 	}
 
 	key2 := "2"
-	value2 := &data{
-		Data: BIGBYTE,
-	}
-
-	value3 := &data{
-		Data: tenByte,
-	}
-
-	value4 := &data{
-		Data: tenByte,
-	}
-
 	key3 := "3"
-	value5 := &data{
-		Data: tenByte,
-	}
 
-	s.Set(key1, value1)
+	s.Set(key1, tenByte)
 	v1, ok1 := s.Get(key1)
 	require.True(t, ok1, "v1 should exist within data")
-	require.Equal(t, v1, value1.Data, "v1 should equal value1.Data")
+	require.Equal(t, v1, value1.data, "v1 should equal value1.Data")
 
 	time.Sleep(time.Second * 5)
 	v1, ok1 = s.Get(key1)
 	require.False(t, ok1, "This value should have been reaped")
 
-	s.Set(key2, value2)
+	s.Set(key2, BIGBYTE)
 	_, ok2 := s.Get(key2)
 	require.False(t, ok2, "This value is too big to be cached")
 
-	for _, reaper := range s.Reapers {
+	for _, reaper := range s.reapers {
 		reaper.Close()
 	}
 
-	s.Set(key1, value3)
+	s.Set(key1, tenByte)
 	time.Sleep(time.Second * 1)
-	s.Set(key2, value4)
+	s.Set(key2, tenByte)
 	time.Sleep(time.Second * 1)
-	s.Set(key3, value5)
-	for _, reaper := range s.Reapers {
+	s.Set(key3, tenByte)
+	for _, reaper := range s.reapers {
 		reaper.Start(1*time.Second, s)
 	}
 	time.Sleep(time.Second * 1)
@@ -458,7 +425,7 @@ func TestLAReaper(t *testing.T) {
 	s := NewCache()
 	s.AddManagedReaper(NewLAReap(3 * time.Second))
 
-	for _, reaper := range s.Reapers {
+	for _, reaper := range s.reapers {
 		reaper.Start(time.Second*1, s)
 	}
 
@@ -471,31 +438,31 @@ func TestLAReaper(t *testing.T) {
 	key2 := "2"
 	key3 := "3"
 
-	value1 := &data{
-		Data: tenByte,
+	value1 := &Data{
+		data: tenByte,
 	}
 
-	value2 := &data{
-		Data: tenByte,
+	value2 := &Data{
+		data: tenByte,
 	}
 
-	value3 := &data{
-		Data: tenByte,
+	value3 := &Data{
+		data: tenByte,
 	}
 
-	s.Set(key1, value1)
-	s.Set(key2, value2)
-	s.Set(key3, value3)
+	s.Set(key1, tenByte)
+	s.Set(key2, tenByte)
+	s.Set(key3, tenByte)
 
 	v1, ok1 := s.Get(key1)
 	v2, ok2 := s.Get(key2)
 	v3, ok3 := s.Get(key3)
 	require.True(t, ok1, "Key 1 should have an entry")
-	require.Equal(t, v1, value1.Data)
+	require.Equal(t, v1, value1.data)
 	require.True(t, ok2, "Key 2 should have an entry")
-	require.Equal(t, v2, value2.Data)
+	require.Equal(t, v2, value2.data)
 	require.True(t, ok3, "Key 3 should have an entry")
-	require.Equal(t, v3, value3.Data)
+	require.Equal(t, v3, value3.data)
 
 	time.Sleep(1 * time.Second)
 	s.Get(key2)
@@ -528,26 +495,26 @@ func TestLAandCAReapers(t *testing.T) {
 	key2 := "2"
 	key3 := "3"
 
-	value1 := &data{
-		Data: tenByte,
+	value1 := &Data{
+		data: tenByte,
 	}
-	value2 := &data{
-		Data: tenByte,
+	value2 := &Data{
+		data: tenByte,
 	}
-	value3 := &data{
-		Data: tenByte,
+	value3 := &Data{
+		data: tenByte,
 	}
 
-	for _, reaper := range s.Reapers {
+	for _, reaper := range s.reapers {
 		reaper.Start(100*time.Millisecond, s)
 	}
 
-	s.Set(key1, value1)
+	s.Set(key1, tenByte)
 	time.Sleep(1 * time.Second)
-	s.Set(key2, value2)
+	s.Set(key2, tenByte)
 	s.Get(key1)
 	time.Sleep(1 * time.Second)
-	s.Set(key3, value3)
+	s.Set(key3, tenByte)
 	v1, ok1 := s.Get(key1)
 	v2, ok2 := s.Get(key2)
 	v3, ok3 := s.Get(key3)
@@ -555,9 +522,9 @@ func TestLAandCAReapers(t *testing.T) {
 	require.True(t, ok1, "All values should be in the cache")
 	require.True(t, ok2, "All values should be in the cache")
 	require.True(t, ok3, "All values should be in the cache")
-	require.Equal(t, v1, value1.Data)
-	require.Equal(t, v2, value2.Data)
-	require.Equal(t, v3, value3.Data)
+	require.Equal(t, v1, value1.data)
+	require.Equal(t, v2, value2.data)
+	require.Equal(t, v3, value3.data)
 
 	time.Sleep(1 * time.Second)
 	s.Get(key1)
@@ -579,10 +546,10 @@ func TestLAandCAReapers(t *testing.T) {
 
 func TestBasicTiered(t *testing.T) {
 	s := NewCache()
-	n, err := NewTieredPolicy(newLRUPolicy(), newLRUPolicy(), nil, time.Duration(0), s)
+	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
 	assert.NoError(t, err, "Policy should have initialized")
-	n.setMaxMatureSize(200)
-	n.setPromotionFreq(4)
+	n.SetMaxMatureSize(200)
+	n.SetPromotionFreq(4)
 	s.SetSize(300)
 	s.policy = n
 
@@ -596,47 +563,44 @@ func TestBasicTiered(t *testing.T) {
 	key3 := "3"
 	key4 := "4"
 
-	value1 := &data{
-		Data: tenByte,
+	value1 := &Data{
+		data: tenByte,
 	}
-	value2 := &data{
-		Data: tenByte,
+	value2 := &Data{
+		data: tenByte,
 	}
-	value3 := &data{
-		Data: tenByte,
-	}
-	value4 := &data{
-		Data: tenByte,
+	value4 := &Data{
+		data: tenByte,
 	}
 
-	s.Set(key1, value1)
+	s.Set(key1, tenByte)
 	v1, ok1 := s.Get(key1)
 	require.True(t, ok1, "Key1 should be in the cache")
-	require.Equal(t, v1, value1.Data)
-	s.Set(key2, value2)
+	require.Equal(t, v1, value1.data)
+	s.Set(key2, tenByte)
 	v2, ok2 := s.Get(key2)
 	require.True(t, ok2, "Key 2 should be in the cache")
-	require.Equal(t, v2, value2.Data)
+	require.Equal(t, v2, value2.data)
 	s.Get(key2)
 	s.Get(key2) //this should trigger a promotion
-	s.Set(key3, value3)
-	s.Get(key1)         //no promotion yet
-	s.Set(key4, value4) //This should trigger an eviction - 3 should be evicted
+	s.Set(key3, tenByte)
+	s.Get(key1)          //no promotion yet
+	s.Set(key4, tenByte) //This should trigger an eviction - 3 should be evicted
 
 	v4, ok4 := s.Get(key4)
 	require.True(t, ok4, "Key4 should be in the cache")
-	require.Equal(t, v4, value4.Data)
+	require.Equal(t, v4, value4.data)
 	_, ok3 := s.Get(key3)
 	require.False(t, ok3, "key 3 should have been evicted")
 	v2, ok2 = s.Get(key2)
 	require.True(t, ok2, "Key 2 should be in the mature cache")
-	require.Equal(t, v2, value2.Data)
+	require.Equal(t, v2, value2.data)
 	t.Logf("key2's freq: %v\n", s.data[key2].Count)
 }
 
 func TestErrorCreatingCache(t *testing.T) {
 	s := NewCache()
-	n := newLRUPolicy()
+	n := NewLRUPolicy()
 	m := NewLFUPolicy()
 	maxAge := time.Duration(10 * time.Second)
 	_, err1 := NewTieredPolicy(nil, n, nil, time.Duration(0), s)
@@ -657,10 +621,10 @@ func TestErrorCreatingCache(t *testing.T) {
 
 func TestObjectTooBigForMature(t *testing.T) {
 	s := NewCache()
-	n, err := NewTieredPolicy(newLRUPolicy(), newLRUPolicy(), nil, time.Duration(0), s)
+	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
 	assert.NoError(t, err, "Policy should have initialized")
-	n.setMaxMatureSize(200)
-	n.setPromotionFreq(3)
+	n.SetMaxMatureSize(200)
+	n.SetPromotionFreq(3)
 	s.SetSize(1100)
 	s.policy = n
 
@@ -678,30 +642,30 @@ func TestObjectTooBigForMature(t *testing.T) {
 	key2 := "2"
 	key3 := "3"
 
-	value1 := &data{
-		Data: tenByte,
+	value1 := &Data{
+		data: tenByte,
 	}
-	value2 := &data{
-		Data: thousandByte,
+	value2 := &Data{
+		data: thousandByte,
 	}
-	value3 := &data{
-		Data: tenByte,
+	value3 := &Data{
+		data: tenByte,
 	}
 
-	s.Set(key1, value1)
+	s.Set(key1, tenByte)
 	v1, ok1 := s.Get(key1)
 	assert.True(t, ok1, "key1 should be in cache")
-	assert.Equal(t, v1, value1.Data)
-	s.Set(key2, value2)
+	assert.Equal(t, v1, value1.data)
+	s.Set(key2, thousandByte)
 	v2, ok2 := s.Get(key2)
 	assert.True(t, ok2, "key2 is small enough for the cache")
-	assert.Equal(t, v2, value2.Data)
+	assert.Equal(t, v2, value2.data)
 	s.Get(key1) //This should promote key1
 	s.Get(key2) //This should try to promote key2 but fail - and this is more recently accessed
-	s.Set(key3, value3)
+	s.Set(key3, tenByte)
 	v3, ok3 := s.Get(key3)
 	assert.True(t, ok3, "key 3 should be in the cache")
-	assert.Equal(t, v3, value3.Data)
+	assert.Equal(t, v3, value3.data)
 	_, ok2 = s.Get(key2)
 	assert.False(t, ok2, "key2 should have been ejected because it did not become mature")
 	_, ok1 = s.Get(key1)
@@ -710,12 +674,12 @@ func TestObjectTooBigForMature(t *testing.T) {
 
 func TestMatureEvictionsForSize(t *testing.T) {
 	s := NewCache()
-	n, err := NewTieredPolicy(newLRUPolicy(), newLRUPolicy(), nil, time.Duration(0), s)
+	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), nil, time.Duration(0), s)
 	s.policy = n
 	require.NoError(t, err)
-	n.setMaxMatureSize(200)
+	n.SetMaxMatureSize(200)
 	s.SetSize(400)
-	n.setPromotionFreq(3)
+	n.SetPromotionFreq(3)
 
 	tenByte := []byte{}
 	for i := 1; i <= 10; i++ {
@@ -727,29 +691,16 @@ func TestMatureEvictionsForSize(t *testing.T) {
 	key3 := "3"
 	key4 := "4"
 
-	value1 := &data{
-		Data: tenByte,
-	}
-	value2 := &data{
-		Data: tenByte,
-	}
-	value3 := &data{
-		Data: tenByte,
-	}
-	value4 := &data{
-		Data: tenByte,
-	}
-
-	s.Set(key1, value1)
-	s.Set(key2, value2)
-	s.Set(key3, value3)
+	s.Set(key1, tenByte)
+	s.Set(key2, tenByte)
+	s.Set(key3, tenByte)
 	for i := 0; i < 3; i++ {
 		s.Get(key2)
 		s.Get(key1) //this leaves key1 as the most recently used
 	}
 	fmt.Println("Mature Size:", n.matureSize)
 	fmt.Println("pFreq:", n.pFreq)
-	s.Set(key4, value4)
+	s.Set(key4, tenByte)
 	for i := 0; i < 3; i++ {
 		s.Get(key4) //this should promote, require a reap in the mature
 	}
@@ -770,10 +721,10 @@ func TestMatureEvictionsForSize(t *testing.T) {
 
 func TestTieredWithTimed(t *testing.T) {
 	s := NewCache()
-	n, err := NewTieredPolicy(newLRUPolicy(), newLRUPolicy(), NewLAReap(time.Duration(1*time.Second)), time.Duration(100*time.Millisecond), s)
+	n, err := NewTieredPolicy(NewLRUPolicy(), NewLRUPolicy(), NewLAReap(time.Duration(1*time.Second)), time.Duration(100*time.Millisecond), s)
 	assert.NoError(t, err)
-	n.setPromotionFreq(3)
-	n.setMaxMatureSize(200)
+	n.SetPromotionFreq(3)
+	n.SetMaxMatureSize(200)
 	s.policy = n
 	s.SetSize(400)
 
@@ -787,23 +738,10 @@ func TestTieredWithTimed(t *testing.T) {
 	key3 := "3"
 	key4 := "4"
 
-	value1 := &data{
-		Data: tenByte,
-	}
-	value2 := &data{
-		Data: tenByte,
-	}
-	value3 := &data{
-		Data: tenByte,
-	}
-	value4 := &data{
-		Data: tenByte,
-	}
-
-	s.Set(key1, value1)
-	s.Set(key2, value2)
-	s.Set(key3, value3)
-	s.Set(key4, value4)
+	s.Set(key1, tenByte)
+	s.Set(key2, tenByte)
+	s.Set(key3, tenByte)
+	s.Set(key4, tenByte)
 
 	s.Get(key1)
 	s.Get(key1) //Should trigger a promotion - now we will not touch to see if it gets culled
@@ -817,12 +755,8 @@ func TestTieredWithTimed(t *testing.T) {
 	require.False(t, ok2, "This value should not have been reaped")
 	_, ok1 := s.Get(key1)
 	require.True(t, ok1, "This value should not be reaped out of the mature cache")
-	s.Set(key2, &data{
-		Data: tenByte,
-	})
-	s.Set("5", &data{
-		Data: tenByte,
-	}) //This should trigger a size based reap of key3
+	s.Set(key2, tenByte)
+	s.Set("5", tenByte) //This should trigger a size based reap of key3
 
 	_, ok3 := s.Get(key3)
 	require.False(t, ok3, "Size based reap of 3 should have occured")

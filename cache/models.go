@@ -1,29 +1,30 @@
 package cache
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"time"
 	"unsafe"
 )
 
-type data struct {
-	Perm       bool
+type Data struct {
+	perm       bool
 	CreatedAt  time.Time
 	LastAccess time.Time
 	Count      int
-	Data       []byte
+	data       []byte
 }
 
-type cache struct {
+type Cache struct {
 	mu              sync.Mutex
-	data            map[string]*data
-	perm            map[string]*data
+	data            map[string]*Data
+	perm            map[string]*Data
 	policy          EvictionPolicy
 	maxSize         int
 	currentSize     int
 	currentPermSize int
-	Reapers         []*managedReaper
+	reapers         []*managedReaper
 }
 
 type managedReaper struct {
@@ -31,38 +32,46 @@ type managedReaper struct {
 	StopCh chan struct{}
 }
 
+func NewManagedReaper(t TimeReap) *managedReaper {
+	m := managedReaper{
+		Loop:   t,
+		StopCh: make(chan struct{}),
+	}
+	return &m
+}
+
 func (m *managedReaper) Close() {
 	close(m.StopCh)
 }
 
-func (m *managedReaper) Start(interval time.Duration, c *cache) {
+func (m *managedReaper) Start(interval time.Duration, c *Cache) {
 	s := m.Loop.Reap(interval, c)
 	m.StopCh = s
 }
 
-func (m *managedReaper) onInsert(key string, entry *data) {
+func (m *managedReaper) onInsert(key string, entry *Data) {
 	m.Loop.onInsert(key, entry)
 }
 
-func (m *managedReaper) onAccess(key string, entry *data) {
+func (m *managedReaper) onAccess(key string, entry *Data) {
 	m.Loop.onAccess(key, entry)
 }
 
-func (m *managedReaper) onDelete(key string, entry *data) {
+func (m *managedReaper) onDelete(key string, entry *Data) {
 	m.Loop.onDelete(key, entry)
 }
 
-func (c *cache) AddManagedReaper(m TimeReap) {
+func (c *Cache) AddManagedReaper(m TimeReap) {
 	r := &managedReaper{
 		Loop: m,
 	}
-	c.Reapers = append(c.Reapers, r)
+	c.reapers = append(c.reapers, r)
 }
 
-func NewCache() *cache {
-	d := make(map[string]*data)
-	p := make(map[string]*data)
-	c := cache{
+func NewCache() *Cache {
+	d := make(map[string]*Data)
+	p := make(map[string]*Data)
+	c := Cache{
 		mu:      sync.Mutex{},
 		data:    d,
 		perm:    p,
@@ -71,7 +80,15 @@ func NewCache() *cache {
 	return &c
 }
 
-func (c *cache) Get(key string) ([]byte, bool) {
+func (c *Cache) SetEvictionPolicy(m EvictionPolicy) error {
+	if c.policy != nil {
+		return fmt.Errorf("Eviction policy already exists")
+	}
+	c.policy = m
+	return nil
+}
+
+func (c *Cache) Get(key string) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	d, exists := c.data[key]
@@ -81,16 +98,16 @@ func (c *cache) Get(key string) ([]byte, bool) {
 			return nil, exists
 		}
 	}
-	if c.policy != nil && d.Perm == false {
+	if c.policy != nil && d.perm == false {
 		c.policy.onAccess(key, d)
 	}
-	for _, reaper := range c.Reapers {
+	for _, reaper := range c.reapers {
 		reaper.onAccess(key, d)
 	}
-	return d.Data, exists
+	return d.data, exists
 }
 
-func (c *cache) SetSize(i int) {
+func (c *Cache) SetSize(i int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.maxSize = i
@@ -99,7 +116,7 @@ func (c *cache) SetSize(i int) {
 	}
 }
 
-func (c *cache) AddSize(i int) {
+func (c *Cache) AddSize(i int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.maxSize += i
@@ -108,25 +125,33 @@ func (c *cache) AddSize(i int) {
 	}
 }
 
-func (c *cache) GetMaxSize() int {
+func (c *Cache) GetMaxSize() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.maxSize
 }
 
-func (c *cache) GetCurrentSize() int {
+func (c *Cache) GetCurrentSize() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.currentSize
 }
 
-func (c *cache) GetCurrentPermSize() int {
+func (c *Cache) GetCurrentPermSize() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.currentPermSize
 }
 
-func (c *cache) Set(key string, d *data) (added bool) {
+func newData(v []byte) *Data {
+	d := Data{
+		data: v,
+	}
+	return &d
+}
+
+func (c *Cache) Set(key string, v []byte) (added bool) {
+	d := newData(v)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	added = true
@@ -139,7 +164,7 @@ func (c *cache) Set(key string, d *data) (added bool) {
 	}
 	//Below we have exactly what we would want if it is not currently in the map
 	if c.policy != nil {
-		add := c.Sizing(d, current)
+		add := c.sizing(d, current)
 		if !add {
 			return false
 		}
@@ -148,25 +173,25 @@ func (c *cache) Set(key string, d *data) (added bool) {
 			return false
 		}
 		c.currentSize += d.sizeOf() - current
-		if d.Perm {
+		if d.perm {
 			c.currentPermSize += d.sizeOf() - current
 		}
 	}
-	if d.Perm == true {
+	if d.perm == true {
 		c.perm[key] = d
 	} else {
 		c.data[key] = d
 	}
-	if c.policy != nil && d.Perm == false {
+	if c.policy != nil && d.perm == false {
 		c.policy.onInsert(key, d)
 	}
-	for _, reaper := range c.Reapers {
+	for _, reaper := range c.reapers {
 		reaper.onInsert(key, d)
 	}
 	return
 }
 
-func (c *cache) MakePerm(key string) {
+func (c *Cache) MakePerm(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	d, ok := c.data[key]
@@ -178,13 +203,13 @@ func (c *cache) MakePerm(key string) {
 	if c.policy != nil {
 		c.policy.onDelete(key, d)
 	}
-	for _, reaper := range c.Reapers {
+	for _, reaper := range c.reapers {
 		reaper.onDelete(key, d)
 	}
 	c.currentPermSize += d.sizeOf()
 }
 
-func (c *cache) MakeNonPerm(key string) {
+func (c *Cache) MakeNonPerm(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	d, ok := c.perm[key]
@@ -196,13 +221,13 @@ func (c *cache) MakeNonPerm(key string) {
 	if c.policy != nil {
 		c.policy.onInsert(key, d)
 	}
-	for _, reaper := range c.Reapers {
+	for _, reaper := range c.reapers {
 		reaper.onDelete(key, d)
 	}
 	c.currentPermSize -= d.sizeOf()
 }
 
-func (c *cache) Delete(key string) {
+func (c *Cache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	d, ok := c.data[key]
@@ -215,16 +240,16 @@ func (c *cache) Delete(key string) {
 	c.currentSize -= d.sizeOf()
 	delete(c.data, key)
 	delete(c.perm, key)
-	if c.policy != nil && !d.Perm {
+	if c.policy != nil && !d.perm {
 		c.policy.onDelete(key, d)
 	}
-	for _, reaper := range c.Reapers {
+	for _, reaper := range c.reapers {
 		reaper.onDelete(key, d)
 	}
 }
 
 // We need a function when the mutex is locked externally
-func (c *cache) deleteNoLock(key string) {
+func (c *Cache) deleteNoLock(key string) {
 	d, ok := c.data[key]
 	if !ok {
 		d, ok = c.perm[key]
@@ -235,22 +260,22 @@ func (c *cache) deleteNoLock(key string) {
 	c.currentSize -= d.sizeOf()
 	delete(c.data, key)
 	delete(c.perm, key)
-	if c.policy != nil && !d.Perm {
+	if c.policy != nil && !d.perm {
 		c.policy.onDelete(key, d)
 	}
-	for _, reaper := range c.Reapers {
+	for _, reaper := range c.reapers {
 		reaper.onDelete(key, d)
 	}
 }
 
-func (d *data) sizeOf() int {
-	fixedSize := unsafe.Sizeof(data{})
-	variableSize := len(d.Data)
+func (d *Data) sizeOf() int {
+	fixedSize := unsafe.Sizeof(Data{})
+	variableSize := len(d.data)
 	return int(fixedSize) + variableSize
 }
 
 // This function is responsible for implementing the policy
-func (c *cache) Sizing(d *data, currentDataSize int) (add bool) {
+func (c *Cache) sizing(d *Data, currentDataSize int) (add bool) {
 	add = true
 	size := d.sizeOf() - currentDataSize
 	if size < 0 {
@@ -269,7 +294,7 @@ func (c *cache) Sizing(d *data, currentDataSize int) (add bool) {
 		}
 	}
 	c.currentSize += size
-	if d.Perm {
+	if d.perm {
 		c.currentPermSize += size
 	}
 	return
