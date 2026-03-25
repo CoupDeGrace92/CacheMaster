@@ -12,6 +12,7 @@ type Data struct {
 	perm       bool
 	CreatedAt  time.Time
 	LastAccess time.Time
+	TTL        time.Duration
 	Count      int
 	data       []byte
 }
